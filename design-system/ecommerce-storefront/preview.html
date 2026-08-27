@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Design system preview — Ecommerce Storefront</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./tokens.css" />
+  <link rel="stylesheet" href="./components.css" />
+  <style>
+    /* Preview chrome only — not design-system tokens */
+    body {
+      margin: 0;
+      background: var(--color-bg-subtle);
+      color: var(--color-fg);
+      font-family: var(--font-family-body);
+      font-size: var(--font-body);
+      line-height: var(--leading-body);
+    }
+
+    .preview-page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-8) var(--space-4) var(--space-16);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-12);
+    }
+
+    .preview-section {
+      background: var(--color-surface);
+      border: var(--border-width) solid var(--color-border);
+      padding: var(--space-8) var(--space-6);
+    }
+
+    .preview-section h2 {
+      margin: 0 0 var(--space-6);
+      font-family: var(--font-family-body);
+      font-size: var(--font-label);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-label);
+      text-transform: uppercase;
+      color: var(--color-fg-muted);
+    }
+
+    .preview-note {
+      margin: var(--space-4) 0 0;
+      font-size: var(--font-body-sm);
+      color: var(--color-fg-subtle);
+    }
+
+    .hero-sample {
+      font-family: var(--font-family-display);
+      font-size: var(--font-display-xl);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-display);
+      line-height: var(--leading-display);
+      color: var(--color-fg);
+      margin: 0;
+    }
+
+    .pdp-frame {
+      width: 375px;
+      max-width: 100%;
+      margin: 0 auto;
+      border: var(--border-width) solid var(--color-border);
+      background: var(--color-bg);
+      padding: var(--space-4);
+      box-sizing: border-box;
+    }
+
+    .pdp-media {
+      aspect-ratio: 3 / 4;
+      background: var(--color-bg-subtle);
+      margin-bottom: var(--space-4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-fg-subtle);
+      font-size: var(--font-caption);
+      letter-spacing: var(--tracking-caption);
+      text-transform: uppercase;
+    }
+
+    .pdp-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+
+    .pdp-name {
+      font-family: var(--font-family-display);
+      font-size: var(--font-display-sm);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-display);
+      line-height: var(--leading-display);
+      color: var(--color-fg);
+      margin: 0 0 var(--space-2);
+    }
+
+    .pdp-price {
+      font-family: var(--font-family-body);
+      font-size: var(--font-body);
+      font-weight: var(--weight-medium);
+      color: var(--color-fg);
+      margin: 0 0 var(--space-4);
+    }
+
+    .pdp-price s {
+      color: var(--color-fg-subtle);
+      font-weight: var(--weight-regular);
+      margin-right: var(--space-2);
+    }
+
+    .pdp-stack {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-8);
+    }
+
+    .contrast-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--font-body-sm);
+    }
+
+    .contrast-table th,
+    .contrast-table td {
+      text-align: left;
+      padding: var(--space-3) var(--space-2);
+      border-bottom: var(--border-width) solid var(--color-border);
+      vertical-align: middle;
+    }
+
+    .contrast-table th {
+      font-family: var(--font-family-body);
+      font-size: var(--font-label);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-label);
+      text-transform: uppercase;
+      color: var(--color-fg-muted);
+    }
+
+    .swatch-text {
+      color: var(--color-accent);
+      background: var(--color-bg);
+      padding: var(--space-2) var(--space-3);
+      border: var(--border-width) solid var(--color-border);
+      display: inline-block;
+    }
+
+    .swatch-text--caption {
+      font-family: var(--font-family-body);
+      font-size: var(--font-caption);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-caption);
+    }
+
+    .swatch-text--label {
+      font-family: var(--font-family-body);
+      font-size: var(--font-label);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-label);
+      text-transform: uppercase;
+    }
+
+    .pass {
+      color: var(--color-success);
+      font-weight: var(--weight-semibold);
+    }
+
+    .fail {
+      color: var(--color-danger);
+      font-weight: var(--weight-semibold);
+    }
+
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-6);
+    }
+
+    @media (max-width: 700px) {
+      .compare-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .compare-col {
+      border: var(--border-width) solid var(--color-border);
+      padding: var(--space-5);
+      background: var(--color-bg);
+    }
+
+    .compare-col header {
+      margin-bottom: var(--space-5);
+      padding-bottom: var(--space-3);
+      border-bottom: var(--border-width) solid var(--color-border);
+      font-size: var(--font-label);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-label);
+      text-transform: uppercase;
+      color: var(--color-fg-muted);
+    }
+
+    .compare-hero {
+      font-size: var(--font-display-xl);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-display);
+      line-height: var(--leading-display);
+      color: var(--color-fg);
+      margin: 0 0 var(--space-6);
+    }
+
+    .compare-hero--serif,
+    .compare-name--serif {
+      font-family: var(--font-family-display);
+    }
+
+    .compare-hero--sans,
+    .compare-name--sans {
+      font-family: var(--font-family-body);
+    }
+
+    .compare-name {
+      font-size: var(--font-display-sm);
+      font-weight: var(--weight-medium);
+      letter-spacing: var(--tracking-display);
+      line-height: var(--leading-display);
+      color: var(--color-fg);
+      margin: 0 0 var(--space-3);
+    }
+  </style>
+</head>
+<body>
+  <main class="preview-page">
+    <header>
+      <p class="ds-label" style="color: var(--color-fg-muted); margin: 0 0 var(--space-2)">Design system preview</p>
+      <h1 class="ds-display ds-display--md" style="margin: 0">Ecommerce Storefront — token check</h1>
+      <p class="preview-note">Links <code>tokens.css</code> + <code>components.css</code> directly. Open this file in a browser.</p>
+    </header>
+
+    <!-- 1. Hero -->
+    <section class="preview-section" aria-labelledby="hero-heading">
+      <h2 id="hero-heading">1 · Hero — --font-display-xl / Cormorant</h2>
+      <p class="hero-sample">New Season, New Drop</p>
+      <p class="preview-note">Plausible Kenyan fashion storefront campaign line.</p>
+    </section>
+
+    <!-- 2. Mock PDP @ 375px -->
+    <section class="preview-section" aria-labelledby="pdp-heading">
+      <h2 id="pdp-heading">2 · Mock PDP — 375px mobile width</h2>
+      <div class="pdp-stack">
+        <article class="pdp-frame" aria-label="PDP sample 1">
+          <div class="pdp-media">Product photo</div>
+          <div class="pdp-meta">
+            <span class="ds-badge ds-badge--sale">Sale</span>
+            <span class="ds-badge ds-badge--presence" role="status" aria-atomic="true">3 viewing</span>
+          </div>
+          <h3 class="pdp-name">Long Sleeved Tees - Heavy Cotton</h3>
+          <p class="pdp-price"><s>KES 2,400</s> KES 1,890</p>
+        </article>
+
+        <article class="pdp-frame" aria-label="PDP sample 2">
+          <div class="pdp-media">Product photo</div>
+          <div class="pdp-meta">
+            <span class="ds-badge ds-badge--sale">Sale</span>
+            <span class="ds-badge ds-badge--presence" role="status" aria-atomic="true">12 viewing</span>
+          </div>
+          <h3 class="pdp-name">Silk Tank Top</h3>
+          <p class="pdp-price"><s>KES 1,650</s> KES 1,290</p>
+        </article>
+
+        <article class="pdp-frame" aria-label="PDP sample 3">
+          <div class="pdp-media">Product photo</div>
+          <div class="pdp-meta">
+            <span class="ds-badge ds-badge--sale">Sale</span>
+            <span class="ds-badge ds-badge--presence" role="status" aria-atomic="true">1 viewing</span>
+          </div>
+          <h3 class="pdp-name">Essential Crew Bodysuit — Soft Rib</h3>
+          <p class="pdp-price"><s>KES 3,100</s> KES 2,450</p>
+        </article>
+      </div>
+      <p class="preview-note">
+        Product names use <code>--font-display-sm</code> (Cormorant). Price uses <code>--font-body</code>.
+        Presence badge = <code>.ds-badge--presence</code> (quiet caption + accent dot, no animation).
+        Sale badge = <code>.ds-badge--sale</code> (<code>--color-sale</code> on <code>--color-accent-muted</code>).
+      </p>
+    </section>
+
+    <!-- 3. WCAG contrast -->
+    <section class="preview-section" aria-labelledby="contrast-heading">
+      <h2 id="contrast-heading">3 · WCAG contrast — --color-accent on --color-bg</h2>
+      <table class="contrast-table">
+        <thead>
+          <tr>
+            <th>Sample</th>
+            <th>Size</th>
+            <th>Ratio</th>
+            <th>AA threshold</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <span class="swatch-text swatch-text--caption">3 viewing · SALE</span>
+            </td>
+            <td>--font-caption · 11px · normal</td>
+            <td><strong>4.92:1</strong></td>
+            <td>4.5:1 (normal text)</td>
+            <td class="pass">PASS AA</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="swatch-text swatch-text--label">Sale · New</span>
+            </td>
+            <td>--font-label · 12px · normal</td>
+            <td><strong>4.92:1</strong></td>
+            <td>4.5:1 (normal text)</td>
+            <td class="pass">PASS AA</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="preview-note">
+        Pairing: <code>#A16207</code> on <code>#FFFFFF</code>. Both sizes are below large-text thresholds
+        (18px / 14px bold), so AA requires <strong>4.5:1</strong>. Computed contrast <strong>4.92:1</strong> — both pass.
+        Failures would render in <span class="fail">red</span> via <code>.fail</code>.
+      </p>
+    </section>
+
+    <!-- 4. Serif vs sans -->
+    <section class="preview-section" aria-labelledby="compare-heading">
+      <h2 id="compare-heading">4 · Serif vs sans — same size / weight</h2>
+      <div class="compare-grid">
+        <div class="compare-col">
+          <header>Cormorant (current display)</header>
+          <p class="compare-hero compare-hero--serif">New Season, New Drop</p>
+          <p class="compare-name compare-name--serif">Long Sleeved Tees - Heavy Cotton</p>
+          <p class="compare-name compare-name--serif">Silk Tank Top</p>
+          <p class="compare-name compare-name--serif">Essential Crew Bodysuit — Soft Rib</p>
+        </div>
+        <div class="compare-col">
+          <header>Montserrat (body sans, same sizes)</header>
+          <p class="compare-hero compare-hero--sans">New Season, New Drop</p>
+          <p class="compare-name compare-name--sans">Long Sleeved Tees - Heavy Cotton</p>
+          <p class="compare-name compare-name--sans">Silk Tank Top</p>
+          <p class="compare-name compare-name--sans">Essential Crew Bodysuit — Soft Rib</p>
+        </div>
+      </div>
+      <p class="preview-note">
+        Left = proposed display face. Right = Montserrat at identical <code>--font-display-xl</code> /
+        <code>--font-display-sm</code> and weight 500. Compare editorial presence vs softness at small PDP sizes.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

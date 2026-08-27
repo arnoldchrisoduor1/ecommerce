@@ -1,0 +1,464 @@
+/**
+ * Base component styles — buttons, badges, modal, card
+ * Depends on tokens.css. Shared by storefront + admin (density via [data-density="admin"]).
+ * No page layouts — review tokens before building screens.
+ */
+
+/* ==========================================================================
+   Primitives
+   ========================================================================== */
+
+.ds-label {
+  font-family: var(--font-family-body);
+  font-size: var(--font-label);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-label);
+  text-transform: uppercase;
+}
+
+.ds-caption {
+  font-family: var(--font-family-body);
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-caption);
+  line-height: var(--leading-label);
+  color: var(--color-fg-subtle);
+}
+
+.ds-display {
+  font-family: var(--font-family-display);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  color: var(--color-fg);
+}
+
+.ds-display--xl { font-size: var(--font-display-xl); }
+.ds-display--lg { font-size: var(--font-display-lg); }
+.ds-display--md { font-size: var(--font-display-md); }
+.ds-display--sm { font-size: var(--font-display-sm); }
+
+.ds-body {
+  font-family: var(--font-family-body);
+  font-size: var(--font-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  color: var(--color-fg);
+}
+
+.ds-body--sm {
+  font-size: var(--font-body-sm);
+  color: var(--color-fg-muted);
+}
+
+/* ==========================================================================
+   Button
+   ========================================================================== */
+
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--density-control-h, var(--btn-h-lg));
+  padding: 0 var(--space-5);
+  font-family: var(--font-family-body);
+  font-size: var(--font-label);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  text-decoration: none;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.ds-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ds-btn:disabled,
+.ds-btn[aria-disabled='true'] {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.ds-btn--primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.ds-btn--primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.ds-btn--accent {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.ds-btn--accent:hover {
+  background: var(--color-accent-hover);
+}
+
+.ds-btn--secondary {
+  background: transparent;
+  color: var(--color-fg);
+  border-color: var(--color-border-strong);
+}
+
+.ds-btn--secondary:hover {
+  border-color: var(--color-fg);
+  background: var(--color-bg-subtle);
+}
+
+.ds-btn--ghost {
+  background: transparent;
+  color: var(--color-fg-muted);
+  border-color: transparent;
+  padding-inline: var(--space-3);
+}
+
+.ds-btn--ghost:hover {
+  color: var(--color-fg);
+}
+
+.ds-btn--danger {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+}
+
+.ds-btn--sm {
+  height: var(--btn-h-sm);
+  padding-inline: var(--space-3);
+}
+
+.ds-btn--md {
+  height: var(--btn-h-md);
+  padding-inline: var(--space-4);
+}
+
+.ds-btn--lg {
+  height: var(--btn-h-lg);
+  padding-inline: var(--space-6);
+}
+
+[data-density='admin'] .ds-btn:not(.ds-btn--lg) {
+  height: var(--btn-h-md);
+}
+
+/* ==========================================================================
+   Badge
+   ========================================================================== */
+
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-family-body);
+  font-size: var(--font-label);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid transparent;
+}
+
+.ds-badge--neutral {
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-muted);
+  border-color: var(--color-border);
+}
+
+.ds-badge--accent,
+.ds-badge--sale {
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+  border-color: transparent;
+}
+
+.ds-badge--stock-ok {
+  background: transparent;
+  color: var(--color-stock-ok);
+  border-color: var(--color-stock-ok);
+}
+
+.ds-badge--stock-low {
+  background: transparent;
+  color: var(--color-stock-low);
+  border-color: var(--color-stock-low);
+}
+
+.ds-badge--stock-out {
+  background: transparent;
+  color: var(--color-stock-out);
+  border-color: var(--color-border);
+}
+
+.ds-badge--success {
+  background: transparent;
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.ds-badge--danger {
+  background: transparent;
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+/* Live viewer — quiet data point, no animation loops */
+.ds-badge--presence {
+  background: transparent;
+  color: var(--color-fg-subtle);
+  border: none;
+  padding-inline: 0;
+  letter-spacing: var(--tracking-caption);
+  font-size: var(--font-caption);
+  text-transform: none;
+  font-weight: var(--weight-medium);
+}
+
+.ds-badge--presence::before {
+  content: '';
+  width: var(--size-presence-dot);
+  height: var(--size-presence-dot);
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+[data-density='admin'] .ds-badge {
+  padding: var(--space-0-5) var(--space-2);
+}
+
+/* ==========================================================================
+   Card
+   ========================================================================== */
+
+.ds-card {
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-none);
+  box-shadow: var(--shadow-none);
+  overflow: hidden;
+}
+
+/* Storefront product tile: borderless; photo is the frame */
+.ds-card--product {
+  border-color: transparent;
+  background: transparent;
+}
+
+.ds-card--product .ds-card__media {
+  aspect-ratio: var(--aspect-product);
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.ds-card--product .ds-card__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ds-card--product .ds-card__body {
+  padding-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Interactive / content card (forms, admin panels) */
+.ds-card--panel {
+  border-color: var(--color-border);
+  padding: var(--density-pad, var(--space-6));
+}
+
+.ds-card--panel .ds-card__title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-display-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display);
+  margin: 0 0 var(--space-4);
+}
+
+[data-density='admin'] .ds-card--panel {
+  padding: var(--space-4);
+}
+
+[data-density='admin'] .ds-card--panel .ds-card__title {
+  font-family: var(--font-family-body);
+  font-size: var(--font-body-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  margin-bottom: var(--space-3);
+}
+
+/* ==========================================================================
+   Modal
+   ========================================================================== */
+
+.ds-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.ds-modal__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--color-scrim);
+  border: none;
+  cursor: pointer;
+}
+
+.ds-modal__panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, var(--modal-width));
+  max-height: min(90vh, var(--modal-max-height));
+  overflow: auto;
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-none);
+  box-shadow: var(--shadow-modal);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Exit-intent: intentional offer, not ad — generous padding, clear hierarchy */
+.ds-modal__panel--offer {
+  width: min(100%, var(--modal-width-offer));
+  text-align: center;
+  gap: var(--space-5);
+}
+
+.ds-modal__eyebrow {
+  font-family: var(--font-family-body);
+  font-size: var(--font-label);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-label);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.ds-modal__title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-display-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  margin: 0;
+}
+
+.ds-modal__code {
+  font-family: var(--font-family-body);
+  font-size: var(--font-body-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caption);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+  border: var(--border-width) dashed var(--color-accent);
+}
+
+.ds-modal__claims {
+  font-family: var(--font-family-body);
+  font-size: var(--font-caption);
+  letter-spacing: var(--tracking-caption);
+  color: var(--color-fg-subtle);
+}
+
+.ds-modal__dismiss {
+  align-self: center;
+}
+
+.ds-modal__close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: var(--btn-h-lg);
+  height: var(--btn-h-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.ds-modal__close:hover {
+  color: var(--color-fg);
+}
+
+.ds-modal__close:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+[data-density='admin'] .ds-modal__panel {
+  padding: var(--space-6);
+  width: min(100%, var(--modal-width-admin));
+}
+
+/* ==========================================================================
+   Highlights reel (avatar ring only — structural primitive)
+   ========================================================================== */
+
+.ds-highlight {
+  width: var(--highlight-size);
+  height: var(--highlight-size);
+  border-radius: var(--radius-full);
+  border: var(--border-width-strong) solid var(--color-border-strong);
+  padding: var(--space-0-5);
+  background: var(--color-bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ds-highlight--active {
+  border-color: var(--color-accent);
+}
+
+.ds-highlight--viewed {
+  border-color: var(--color-border);
+  opacity: var(--opacity-viewed);
+}
+
+.ds-highlight img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-full);
+  display: block;
+}
