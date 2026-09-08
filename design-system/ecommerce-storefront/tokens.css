@@ -123,6 +123,7 @@
   --z-drawer: 45;
   --presence-high-demand: 3; /* viewer count threshold for high-demand tag */
   --drawer-width: 24rem;
+  --free-delivery-threshold: 3000; /* KES — free delivery progress target */
 
   /* ----- Aspect ----- */
   --aspect-product: 3 / 4;

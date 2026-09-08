@@ -21,8 +21,9 @@ test.describe('Admin overview', () => {
 
 test.describe('Admin product management', () => {
   test('can create a product with a variant', async ({ page }) => {
+    const name = `Test Tee ${Date.now()}`;
     await page.goto('/admin/products/new');
-    await page.getByTestId('product-name').fill('Test Tee');
+    await page.getByTestId('product-name').fill(name);
     await page.getByTestId('product-price').fill('1000');
     await page.getByTestId('save-product').click();
     await expect(page.getByTestId('product-saved-toast')).toBeVisible();

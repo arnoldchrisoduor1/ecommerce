@@ -570,15 +570,9 @@ func (h *Handler) GetBundleBySlug(c *fiber.Ctx) error {
 
 func (h *Handler) InitiateCardPayment(c *fiber.Ctx) error { return notImplemented(c) }
 
-// --- Account (SPEC.md §8) ---
-func (h *Handler) ListMyOrders(c *fiber.Ctx) error       { return notImplemented(c) }
-func (h *Handler) GetMyOrder(c *fiber.Ctx) error         { return notImplemented(c) }
-func (h *Handler) GetWishlist(c *fiber.Ctx) error        { return notImplemented(c) }
-func (h *Handler) AddToWishlist(c *fiber.Ctx) error      { return notImplemented(c) }
-func (h *Handler) RemoveFromWishlist(c *fiber.Ctx) error { return notImplemented(c) }
-func (h *Handler) ListAddresses(c *fiber.Ctx) error      { return notImplemented(c) }
-func (h *Handler) CreateAddress(c *fiber.Ctx) error      { return notImplemented(c) }
-func (h *Handler) TrackOrder(c *fiber.Ctx) error         { return notImplemented(c) }
+// Account handlers live in account.go.
+// Gift card handlers live in gift_cards.go.
+// Admin analytics handlers live in admin_analytics.go.
 
 // Discount handlers live in discounts.go.
 // Public reviews live in reviews_public.go.
@@ -586,14 +580,6 @@ func (h *Handler) TrackOrder(c *fiber.Ctx) error         { return notImplemented
 // Stylist handlers live in stylist.go.
 // CMS handlers live in cms.go and admin_cms.go.
 
-// --- Admin: overview ---
-func (h *Handler) AdminOverview(c *fiber.Ctx) error { return notImplemented(c) }
+// --- Admin: overview & analytics in admin_analytics.go ---
 
 // Admin catalog handlers live in admin_products.go and admin_bundles.go.
-
-// Admin orders/discounts/customers/reviews live in admin_*.go files.
-// Admin CMS handlers live in admin_cms.go.
-
-// --- Admin: analytics ---
-func (h *Handler) AdminTopProducts(c *fiber.Ctx) error    { return notImplemented(c) }
-func (h *Handler) AdminLowStockAlerts(c *fiber.Ctx) error { return notImplemented(c) }

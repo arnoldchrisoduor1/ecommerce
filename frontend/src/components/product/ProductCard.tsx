@@ -27,9 +27,9 @@ export function ProductCard({
     : `/product/${product.slug}`;
 
   return (
-    <>
-      <Card variant="product" data-testid="product-card" className="product-card">
-        <Link href={href} className="product-card__link">
+    <div className="product-card-wrap">
+      <Card variant="product" className="product-card">
+        <Link href={href} className="product-card__link" data-testid="product-card">
           <CardMedia>
             {product.primary_image?.url ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -72,21 +72,18 @@ export function ProductCard({
             {showViewer ? <ViewerBadge productId={product.id} /> : null}
           </CardBody>
         </Link>
-        {showQuickView ? (
-          <button
-            type="button"
-            className="ds-btn ds-btn--secondary ds-btn--sm product-card__quick"
-            data-testid="quick-view-trigger"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setQuickOpen(true);
-            }}
-          >
-            Quick view
-          </button>
-        ) : null}
       </Card>
+
+      {showQuickView ? (
+        <button
+          type="button"
+          className="ds-btn ds-btn--secondary ds-btn--sm product-card__quick"
+          data-testid="quick-view-trigger"
+          onClick={() => setQuickOpen(true)}
+        >
+          Quick view
+        </button>
+      ) : null}
 
       <Modal
         open={quickOpen}
@@ -115,6 +112,6 @@ export function ProductCard({
           Close
         </Button>
       </Modal>
-    </>
+    </div>
   );
 }

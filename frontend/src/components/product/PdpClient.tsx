@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Modal } from '@/components/ui';
 import { ViewerBadge } from '@/components/product/ViewerBadge';
 import { ProductCard } from '@/components/product/ProductCard';
 import { useCart } from '@/components/cart/CartProvider';
 import type { ProductDetail, ProductListItem, ProductReview } from '@/lib/api';
+import { apiGet, apiSend } from '@/lib/api';
 import { formatKes } from '@/lib/format';
+import { accountQuery } from '@/lib/account';
 
 type Props = {
   product: ProductDetail;
@@ -15,7 +17,7 @@ type Props = {
 };
 
 export function PdpClient({ product, related, reviews }: Props) {
-  const { addToCart } = useCart();
+  const { addToCart, sessionId } = useCart();
   const sizes = useMemo(
     () => [...new Set(product.variants.map((v) => v.size).filter(Boolean))] as string[],
     [product.variants],
@@ -32,6 +34,48 @@ export function PdpClient({ product, related, reviews }: Props) {
   const [busy, setBusy] = useState(false);
   const [wishlisted, setWishlisted] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    async function check() {
+      try {
+        const res = await apiGet<{ items: { id: string }[] }>(
+          `/account/wishlist${accountQuery(sessionId)}`,
+        );
+        if (!cancelled) {
+          setWishlisted(res.items.some((i) => i.id === product.id));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, product.id]);
+
+  async function toggleWishlist() {
+    if (!sessionId) return;
+    setBusy(true);
+    try {
+      const q = accountQuery(sessionId);
+      if (wishlisted) {
+        await apiSend(`/account/wishlist/${product.id}${q}`, 'DELETE');
+        setWishlisted(false);
+      } else {
+        await apiSend(`/account/wishlist/${product.id}${q}`, 'POST', {
+          session_id: sessionId,
+        });
+        setWishlisted(true);
+      }
+    } catch {
+      setError('Could not update wishlist');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const selected = product.variants.find((v) => {
     const sizeOk = size == null || v.size === size;
@@ -114,11 +158,11 @@ export function PdpClient({ product, related, reviews }: Props) {
         </p>
 
         <div data-testid="pdp-viewer-count">
-          <ViewerBadge productId={product.id} testId="pdp-viewer-count-badge" showHighDemand />
+          <ViewerBadge productId={product.id} testId="pdp-viewer-count-badge" showHighDemand heartbeat />
         </div>
 
         {sizes.length > 0 ? (
-          <div className="pdp__variants" data-testid="size-selector">
+          <div className="pdp__variants">
             <div className="pdp__variant-head">
               <span className="ds-label">Size</span>
               <button
@@ -130,7 +174,7 @@ export function PdpClient({ product, related, reviews }: Props) {
                 Size chart
               </button>
             </div>
-            <div className="pdp__swatches">
+            <div className="pdp__swatches" data-testid="size-selector">
               {sizes.map((s) => (
                 <button
                   key={s}
@@ -189,7 +233,8 @@ export function PdpClient({ product, related, reviews }: Props) {
             variant="secondary"
             size="lg"
             data-testid="wishlist-toggle"
-            onClick={() => setWishlisted((v) => !v)}
+            disabled={busy}
+            onClick={() => void toggleWishlist()}
           >
             {wishlisted ? 'Saved' : 'Save'}
           </Button>

@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
+import { EXIT_INTENT_BOOT_SCRIPT } from '@/components/urgency/exit-intent-boot';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -13,7 +15,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Script id="exit-intent-boot" strategy="beforeInteractive">
+          {EXIT_INTENT_BOOT_SCRIPT}
+        </Script>
+        {children}
+      </body>
     </html>
   );
 }

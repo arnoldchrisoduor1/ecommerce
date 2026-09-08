@@ -8,7 +8,7 @@ export function FeaturedReviews({ reviews }: Props) {
   if (reviews.length === 0) return null;
 
   return (
-    <section className="reviews-feat" aria-labelledby="reviews-heading">
+    <section className="reviews-feat" aria-labelledby="reviews-heading" data-testid="featured-review">
       <h2 id="reviews-heading" className="ds-display ds-display--md">
         From customers
       </h2>

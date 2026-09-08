@@ -95,7 +95,8 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO discounts (code, type, value, max_claims, is_active, context) VALUES
-  ('WELCOME10', 'percentage', 10, 100, true, 'exit_intent')
+  ('WELCOME10', 'percentage', 10, 100, true, 'exit_intent'),
+  ('TESTCODE10', 'percentage', 10, 100, true, 'general')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO content_blocks (key, data, is_active) VALUES

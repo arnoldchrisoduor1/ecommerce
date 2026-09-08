@@ -11,11 +11,14 @@ import {
   type ProductListItem,
   type StatsCounter,
 } from '@/lib/api';
+import { unstable_noStore as noStore } from 'next/cache';
 import { AnnouncementBar } from '@/components/layout/AnnouncementBar';
 import { MainNav } from '@/components/layout/MainNav';
 import { StylistChat } from '@/components/layout/StylistChat';
 import { CartProvider } from '@/components/cart/CartProvider';
 import { CartDrawer } from '@/components/cart/CartDrawer';
+import { ExitIntent } from '@/components/urgency/ExitIntent';
+import { PurchaseTicker } from '@/components/urgency/PurchaseTicker';
 import { BlogPreview } from '@/components/landing/BlogPreview';
 import { EmailCapture } from '@/components/landing/EmailCapture';
 import { FeaturedReviews } from '@/components/landing/FeaturedReviews';
@@ -28,6 +31,7 @@ import './catalog.css';
 export const dynamic = 'force-dynamic';
 
 async function loadLanding() {
+  noStore();
   const settled = await Promise.allSettled([
     apiGet<ContentBlock<unknown>>('/content/blocks/announcement_bar'),
     apiGet<ContentBlock<unknown>>('/content/blocks/hero'),
@@ -99,6 +103,8 @@ export default async function HomePage() {
         <EmailCapture joinedCount={data.joined} />
         <StylistChat />
         <CartDrawer />
+        <ExitIntent />
+        <PurchaseTicker />
       </div>
     </CartProvider>
   );

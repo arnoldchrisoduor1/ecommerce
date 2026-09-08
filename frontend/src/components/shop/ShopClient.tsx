@@ -88,6 +88,7 @@ export function ShopClient({
   }, [sort, category, page, pageSize]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const ordered = [...products].sort((a, b) => Number(a.is_bundle) - Number(b.is_bundle));
 
   return (
     <div className={`shop ${pending ? 'shop--pending' : ''}`}>
@@ -128,7 +129,7 @@ export function ShopClient({
       </header>
 
       <div className="shelf__grid" data-testid="shop-grid">
-        {products.map((p) => (
+        {ordered.map((p) => (
           <ProductCard key={p.id} product={p} showQuickView showViewer />
         ))}
       </div>

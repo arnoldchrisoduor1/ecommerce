@@ -1,18 +1,17 @@
 import { test, expect } from '@playwright/test';
+import { gotoSeededPdp, addSeededProductToBag, seedCartFromPdp } from './helpers';
 
 // SPEC.md §6 — Cart & urgency features
 test.describe('Cart', () => {
   test('adding an item opens the cart drawer with correct subtotal', async ({ page }) => {
-    await page.goto('/shop');
-    await page.getByTestId('product-card').first().click();
-    await page.getByTestId('size-selector').getByRole('button').first().click();
-    await page.getByTestId('add-to-bag').click();
-    await expect(page.getByTestId('cart-drawer')).toBeVisible();
+    await gotoSeededPdp(page);
+    await addSeededProductToBag(page);
     await expect(page.getByTestId('cart-subtotal')).not.toHaveText('KES 0');
   });
 
   test('quantity controls update subtotal', async ({ page }) => {
-    await page.goto('/cart'); // assumes a seeded/persisted cart in test env
+    await seedCartFromPdp(page);
+    await page.goto('/cart');
     const before = await page.getByTestId('cart-subtotal').textContent();
     await page.getByTestId('cart-item-increment').first().click();
     await expect(page.getByTestId('cart-subtotal')).not.toHaveText(before || '');
@@ -30,6 +29,7 @@ test.describe('Cart', () => {
 // SPEC.md §7 — Checkout
 test.describe('Checkout', () => {
   test('completes the delivery -> payment -> confirm flow', async ({ page }) => {
+    await seedCartFromPdp(page);
     await page.goto('/checkout');
     await page.getByTestId('address-line1').fill('123 Test Street');
     await page.getByTestId('address-city').fill('Nairobi');
@@ -45,6 +45,7 @@ test.describe('Checkout', () => {
   });
 
   test('promo code field applies a discount to the total', async ({ page }) => {
+    await seedCartFromPdp(page);
     await page.goto('/checkout');
     await page.getByTestId('promo-code-input').fill('TESTCODE10');
     await page.getByTestId('promo-code-apply').click();

@@ -157,7 +157,10 @@ func (h *Handler) AdminSetReviewFeatured(c *fiber.Ctx) error {
 		return badRequest(c, "invalid request body")
 	}
 
-	tag, err := h.db.Exec(c.Context(), `UPDATE reviews SET is_featured = $1 WHERE id = $2`, req.IsFeatured, id)
+	tag, err := h.db.Exec(c.Context(), `
+		UPDATE reviews SET is_featured = $1,
+			status = CASE WHEN $1 = true THEN 'approved' ELSE status END
+		WHERE id = $2`, req.IsFeatured, id)
 	if err != nil {
 		return internalError(c, "AdminSetReviewFeatured update", err)
 	}

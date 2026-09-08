@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { gotoSeededPdp, addSeededProductToBag, seedCartFromPdp } from './helpers';
 
 // SPEC.md §2 — Category / shop pages
 test.describe('Category / shop page', () => {
@@ -28,24 +29,19 @@ test.describe('Category / shop page', () => {
 // SPEC.md §3 — Product detail page
 test.describe('Product detail page', () => {
   test('shows gallery, variant selectors, and add-to-bag', async ({ page }) => {
-    await page.goto('/shop');
-    await page.getByTestId('product-card').first().click();
+    await gotoSeededPdp(page);
     await expect(page.getByTestId('pdp-gallery')).toBeVisible();
     await expect(page.getByTestId('size-selector')).toBeVisible();
-    await page.getByTestId('size-selector').getByRole('button').first().click();
-    await page.getByTestId('add-to-bag').click();
-    await expect(page.getByTestId('cart-drawer')).toBeVisible();
+    await addSeededProductToBag(page);
   });
 
   test('live viewer count and high-demand tag render on PDP', async ({ page }) => {
-    await page.goto('/shop');
-    await page.getByTestId('product-card').first().click();
+    await gotoSeededPdp(page);
     await expect(page.getByTestId('pdp-viewer-count')).toBeVisible();
   });
 
   test('size chart modal opens', async ({ page }) => {
-    await page.goto('/shop');
-    await page.getByTestId('product-card').first().click();
+    await gotoSeededPdp(page);
     await page.getByTestId('size-chart-trigger').click();
     await expect(page.getByTestId('size-chart-modal')).toBeVisible();
   });

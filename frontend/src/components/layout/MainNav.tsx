@@ -36,6 +36,9 @@ export function MainNav({ categories }: Props) {
         </nav>
 
         <div className="main-nav__actions">
+          <Link href="/account" className="main-nav__icon" aria-label="Account" data-testid="nav-account">
+            <AccountIcon />
+          </Link>
           <Link href="/search" className="main-nav__icon" aria-label="Search">
             <SearchIcon />
           </Link>
@@ -55,6 +58,15 @@ export function MainNav({ categories }: Props) {
         </div>
       </div>
     </header>
+  );
+}
+
+function AccountIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 19c1.5-3 4-4.5 7-4.5S17.5 16 19 19" />
+    </svg>
   );
 }
 

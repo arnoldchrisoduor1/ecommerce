@@ -9,6 +9,8 @@ type Props = {
   productId: string;
   testId?: string;
   showHighDemand?: boolean;
+  /** When false, only GET count (shop grid). PDP should heartbeat. */
+  heartbeat?: boolean;
 };
 
 function highDemandThreshold(): number {
@@ -24,33 +26,40 @@ export function ViewerBadge({
   productId,
   testId = 'viewer-count-badge',
   showHighDemand = false,
+  heartbeat = false,
 }: Props) {
   const { sessionId } = useCart();
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    if (!productId || !sessionId) return;
+    if (!productId) return;
     let cancelled = false;
 
     async function tick() {
       try {
-        await apiSend(`/presence/products/${productId}/heartbeat`, 'POST', {
-          session_id: sessionId,
-        });
+        if (heartbeat && sessionId) {
+          await apiSend(`/presence/products/${productId}/heartbeat`, 'POST', {
+            session_id: sessionId,
+          });
+        }
         const res = await apiGet<{ count: number }>(`/presence/products/${productId}`);
         if (!cancelled) setCount(res.count);
       } catch {
-        /* presence optional */
+        /* presence optional — keep last count */
       }
     }
 
     void tick();
+    if (!heartbeat) return () => {
+      cancelled = true;
+    };
+
     const id = window.setInterval(tick, 15000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [productId, sessionId]);
+  }, [productId, sessionId, heartbeat]);
 
   const high = showHighDemand && count >= highDemandThreshold();
 

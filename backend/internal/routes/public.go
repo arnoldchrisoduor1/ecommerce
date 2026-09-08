@@ -59,6 +59,12 @@ func RegisterPublicRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 	// Standalone order tracking, no login required (order id + phone/email)
 	api.Get("/orders/track", h.TrackOrder)
 
+	// Gift cards
+	gift := api.Group("/gift-cards")
+	gift.Post("/purchase", h.PurchaseGiftCard)
+	gift.Get("/:code", h.GetGiftCard)
+	gift.Post("/redeem", h.RedeemGiftCard)
+
 	// --- Discounts (exit-intent + general) ---
 	discounts := api.Group("/discounts")
 	discounts.Get("/:code", h.GetDiscount)
