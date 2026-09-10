@@ -3,6 +3,8 @@ import type { NextConfig } from 'next';
 const apiOrigin = process.env.API_URL?.replace(/\/$/, '') || 'http://localhost:8081';
 
 const nextConfig: NextConfig = {
+  // Required for Docker/Linux deploy packaging (self-contained server.js tree).
+  output: 'standalone',
   experimental: {
     externalDir: true,
   },
@@ -10,6 +12,8 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'placehold.co' },
       { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'https', hostname: 'ecomm-api.oduor-arnold.com' },
+      { protocol: 'https', hostname: 'ecommerce.oduor-arnold.com' },
     ],
   },
   async rewrites() {

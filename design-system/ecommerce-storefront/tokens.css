@@ -91,7 +91,9 @@
   --modal-width: 28rem;
   --modal-width-offer: 24rem;
   --modal-width-admin: 36rem;
+  --modal-width-quick: 40rem;
   --modal-max-height: 40rem;
+  --scrollbar-size: 0.375rem; /* thin overlay scrollbars */
   --highlight-size: 4.5rem;
   --size-presence-dot: 0.375rem; /* 6px */
   --size-card-min: 12rem; /* product grid / style-guide card column min */
@@ -141,6 +143,7 @@
 
   /* ----- Motion extras ----- */
   --duration-announce: 4s; /* announcement bar message dwell */
+  --duration-hero-crossfade: 800ms;
 
   /* ----- Density (storefront) ----- */
   --density-pad: var(--space-6);
@@ -176,5 +179,6 @@
     --duration-fast: 0.01ms;
     --duration-base: 0.01ms;
     --duration-slow: 0.01ms;
+    --duration-hero-crossfade: 0.01ms;
   }
 }

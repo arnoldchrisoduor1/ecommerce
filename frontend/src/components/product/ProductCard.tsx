@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Badge, Button, Card, CardBody, CardMedia, Modal } from '@/components/ui';
+import { Badge, Card, CardBody, CardMedia, Modal } from '@/components/ui';
 import { ViewerBadge } from '@/components/product/ViewerBadge';
 import type { ProductListItem } from '@/lib/api';
 import { formatKes } from '@/lib/format';
@@ -89,28 +89,60 @@ export function ProductCard({
         open={quickOpen}
         onClose={() => setQuickOpen(false)}
         title={product.name}
+        panelClassName="ds-modal__panel--quick"
         data-testid="quick-view-modal"
       >
-        {product.primary_image?.url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={product.primary_image.url}
-            alt=""
-            className="quick-view__img"
-            decoding="async"
-          />
-        ) : null}
-        <p className="ds-body">{formatKes(price)}</p>
-        <Link
-          href={href}
-          className="ds-btn ds-btn--primary ds-btn--md"
-          onClick={() => setQuickOpen(false)}
-        >
-          View product
-        </Link>
-        <Button variant="ghost" size="md" onClick={() => setQuickOpen(false)}>
-          Close
-        </Button>
+        <div className="quick-view">
+          {product.primary_image?.url ? (
+            <div className="quick-view__media">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={product.primary_image.url}
+                alt=""
+                className="quick-view__img"
+                decoding="async"
+              />
+            </div>
+          ) : (
+            <div className="quick-view__media quick-view__media--empty" aria-hidden="true" />
+          )}
+          <div className="quick-view__meta">
+            <p className="ds-body quick-view__price">
+              {onSale ? (
+                <>
+                  <span className="product-card__sale">{formatKes(price)}</span>
+                  <span className="product-card__was ds-caption">
+                    {formatKes(product.base_price)}
+                  </span>
+                </>
+              ) : (
+                formatKes(price)
+              )}
+            </p>
+            {product.variants?.length ? (
+              <p className="ds-caption quick-view__hint">
+                {product.variants.length} option
+                {product.variants.length === 1 ? '' : 's'} on full page
+              </p>
+            ) : null}
+            <div className="quick-view__actions">
+              <Link
+                href={href}
+                className="ds-btn ds-btn--primary ds-btn--md quick-view__cta"
+                onClick={() => setQuickOpen(false)}
+              >
+                View product
+              </Link>
+              <button
+                type="button"
+                className="ds-btn ds-btn--ghost ds-btn--md quick-view__cta"
+                onClick={() => setQuickOpen(false)}
+              >
+                Keep browsing
+              </button>
+            </div>
+          </div>
+        </div>
       </Modal>
     </div>
   );

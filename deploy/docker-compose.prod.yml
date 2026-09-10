@@ -1,0 +1,167 @@
+# Production stack for ~/ecommerce on the VPS.
+# Artifacts are prebuilt on the laptop — these Dockerfiles only COPY binaries.
+#
+# Internal ports (host-bound to loopback only):
+#   frontend  → 127.0.0.1:3080
+#   backend   → 127.0.0.1:8081
+#   minio     → 127.0.0.1:9000  (nginx media proxy)
+# postgres/redis stay on the compose network (no host publish).
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ecommerce
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=50
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecommerce"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    deploy:
+      resources:
+        limits:
+          memory: 48M
+
+  flyway:
+    image: flyway/flyway:10
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/ecommerce
+      FLYWAY_USER: ecommerce
+      FLYWAY_PASSWORD: ecommerce
+    volumes:
+      - ../db/migrations:/flyway/sql:ro
+      - ../flyway.conf:/flyway/conf/flyway.conf:ro
+    command: migrate
+    restart: "no"
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - minio_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        mc alias set local http://minio:9000 minioadmin minioadmin && break;
+        sleep 2;
+      done;
+      mc mb -p local/ecommerce || true;
+      mc anonymous set download local/ecommerce;
+      exit 0;
+      "
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      flyway:
+        condition: service_completed_successfully
+      createbuckets:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://ecommerce:ecommerce@postgres:5432/ecommerce
+      REDIS_ADDR: redis:6379
+      CORS_ALLOW_ORIGINS: https://ecommerce.oduor-arnold.com
+      PORT: "8080"
+      MPESA_CONSUMER_KEY: ""
+      MPESA_CONSUMER_SECRET: ""
+      MPESA_SHORTCODE: "174379"
+      MPESA_PASSKEY: ""
+      MPESA_CALLBACK_URL: https://ecomm-api.oduor-arnold.com/api/payments/mpesa/callback
+      MPESA_ENV: sandbox
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: change-me-in-production
+      ADMIN_JWT_SECRET: dev-only-change-me-to-a-long-random-string-at-least-32-chars
+      PRESENCE_TTL_SECONDS: "60"
+      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_MODEL: claude-sonnet-4-20250514
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: ecommerce
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_BASE_URL: https://ecomm-api.oduor-arnold.com/media
+    ports:
+      - "127.0.0.1:8081:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Server-side fetches + Next rewrites target the compose service name.
+      API_URL: http://backend:8080
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:3080:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

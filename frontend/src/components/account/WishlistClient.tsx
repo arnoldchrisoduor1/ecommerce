@@ -7,7 +7,7 @@ import { AccountShell } from '@/components/account/AccountShell';
 import { useCart } from '@/components/cart/CartProvider';
 import { apiGet, apiSend } from '@/lib/api';
 import { formatKes } from '@/lib/format';
-import { accountQuery } from '@/lib/account';
+import { accountQuery, notifyWishlistChanged } from '@/lib/account';
 
 type WishItem = {
   id: string;
@@ -31,6 +31,7 @@ export function WishlistClient() {
       );
       setItems(res.items);
       setError('');
+      notifyWishlistChanged(res.items.length);
     } catch {
       setError('Could not load wishlist');
     }
@@ -44,7 +45,11 @@ export function WishlistClient() {
   async function remove(id: string) {
     try {
       await apiSend(`/account/wishlist/${id}${accountQuery(sessionId)}`, 'DELETE');
-      setItems((prev) => prev.filter((p) => p.id !== id));
+      setItems((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        notifyWishlistChanged(next.length);
+        return next;
+      });
     } catch {
       setError('Could not remove item');
     }

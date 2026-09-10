@@ -16,15 +16,18 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	"ecommerce-backend/internal/storage"
 )
 
 type Handler struct {
-	db  *pgxpool.Pool
-	rdb *redis.Client
+	db    *pgxpool.Pool
+	rdb   *redis.Client
+	store *storage.Client
 }
 
-func New(db *pgxpool.Pool, rdb *redis.Client) *Handler {
-	return &Handler{db: db, rdb: rdb}
+func New(db *pgxpool.Pool, rdb *redis.Client, store *storage.Client) *Handler {
+	return &Handler{db: db, rdb: rdb, store: store}
 }
 
 func notImplemented(c *fiber.Ctx) error {

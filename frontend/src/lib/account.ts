@@ -35,3 +35,14 @@ export function accountQuery(sessionId: string, extra?: { phone?: string; email?
   const q = params.toString();
   return q ? `?${q}` : '';
 }
+
+export const WISHLIST_CHANGED_EVENT = 'studio:wishlist-changed';
+
+export function notifyWishlistChanged(count?: number) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(WISHLIST_CHANGED_EVENT, {
+      detail: { count },
+    }),
+  );
+}

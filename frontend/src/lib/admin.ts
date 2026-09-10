@@ -78,6 +78,11 @@ export function adminSend<T>(
   });
 }
 
+/** Multipart upload (do not set Content-Type — browser sets boundary). */
+export function adminUpload<T>(path: string, form: FormData) {
+  return adminFetch<T>(path, { method: 'POST', body: form });
+}
+
 export function slugify(name: string): string {
   return name
     .trim()
@@ -91,6 +96,7 @@ export type AdminOverview = {
   revenue_today: number;
   active_viewers: number;
   discount_claims_today: number;
+  recent_orders?: unknown[];
 };
 
 export type LowStockVariant = {

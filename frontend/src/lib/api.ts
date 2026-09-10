@@ -147,8 +147,21 @@ export type HeroData = {
   subheadline?: string;
   cta_label?: string;
   cta_url?: string;
+  /** Legacy single image; still supported as fallback. */
   media_url?: string;
+  /** Ordered hero slides; when set, these take precedence over media_url. */
+  media_urls?: string[];
+  /** Slide dwell time in ms (default 5500). */
+  media_interval_ms?: number;
 };
+
+/** Resolve ordered hero slide URLs from CMS block data. */
+export function heroMediaUrls(hero: HeroData): string[] {
+  const multi = (hero.media_urls || []).map((u) => u.trim()).filter(Boolean);
+  if (multi.length) return multi;
+  if (hero.media_url?.trim()) return [hero.media_url.trim()];
+  return [];
+}
 
 export type AnnouncementData = {
   messages?: string[];
@@ -175,6 +188,7 @@ export type ProductListItem = {
   base_price: number;
   sale_price?: number | null;
   is_bundle: boolean;
+  variants?: ProductVariant[];
   primary_image?: ProductImage | null;
 };
 

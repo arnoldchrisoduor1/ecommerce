@@ -13,6 +13,9 @@ type Step = 'delivery' | 'payment' | 'confirm';
 type Quote = {
   delivery_fee: number;
   estimated_days: number;
+  estimated_delivery_min_days?: number;
+  estimated_delivery_max_days?: number;
+  estimated_delivery_label?: string;
   courier: string;
 };
 
@@ -23,6 +26,7 @@ type Order = {
   delivery_fee: number;
   discount_amount: number;
   status: string;
+  estimated_delivery_label?: string;
 };
 
 export function CheckoutClient() {
@@ -68,6 +72,10 @@ export function CheckoutClient() {
   const subtotal = cart?.subtotal ?? 0;
   const deliveryFee = quote?.delivery_fee ?? 0;
   const total = Math.max(0, subtotal + deliveryFee - discountAmount);
+  const promoApplied = Boolean(discountCode);
+  const deliveryLabel =
+    quote?.estimated_delivery_label ||
+    (quote?.estimated_days ? `${quote.estimated_days} business days` : '3–8 business days');
 
   async function applyPromo() {
     setError('');
@@ -88,6 +96,7 @@ export function CheckoutClient() {
         d.type === 'percentage' ? (subtotal * d.value) / 100 : d.value;
       setDiscountCode(d.code);
       setDiscountAmount(amount);
+      setPromo(d.code);
     } catch {
       setError('Invalid promo code');
       setDiscountCode(null);
@@ -164,6 +173,9 @@ export function CheckoutClient() {
         <p className="ds-caption">
           Payment: {payment} · Status: {order.status}
         </p>
+        <p className="ds-caption" data-testid="confirmed-delivery-estimate">
+          Estimated delivery: {order.estimated_delivery_label || deliveryLabel}
+        </p>
         <Button variant="primary" size="lg" onClick={() => router.push('/shop')}>
           Continue shopping
         </Button>
@@ -190,7 +202,15 @@ export function CheckoutClient() {
           data-testid="promo-code-input"
           placeholder="Promo code"
           value={promo}
-          onChange={(e) => setPromo(e.target.value)}
+          onChange={(e) => {
+            setPromo(e.target.value);
+            if (discountCode) {
+              setDiscountCode(null);
+              setDiscountAmount(0);
+            }
+          }}
+          disabled={promoApplied}
+          readOnly={promoApplied}
         />
         <Button
           type="button"
@@ -198,8 +218,9 @@ export function CheckoutClient() {
           size="md"
           data-testid="promo-code-apply"
           onClick={() => void applyPromo()}
+          disabled={promoApplied || busy}
         >
-          Apply
+          {promoApplied ? 'Applied' : 'Apply'}
         </Button>
         {discountAmount > 0 ? (
           <p className="ds-body" data-testid="discount-line">
@@ -258,8 +279,7 @@ export function CheckoutClient() {
         <div className="checkout__form">
           <div className="checkout__quote" data-testid="delivery-quote">
             <p className="ds-body">
-              {quote?.courier}: {formatKes(quote?.delivery_fee ?? 0)} ·{' '}
-              {quote?.estimated_days} days
+              {quote?.courier}: {formatKes(quote?.delivery_fee ?? 0)} · {deliveryLabel}
             </p>
           </div>
           <fieldset className="checkout__pay">
@@ -296,6 +316,17 @@ export function CheckoutClient() {
       {step === 'confirm' ? (
         <div className="checkout__form">
           <div className="checkout__summary" data-testid="order-summary">
+            <div className="checkout__ship" data-testid="confirm-location">
+              <p className="ds-label">Delivery to</p>
+              <p className="ds-body">
+                {line1}
+                {city ? `, ${city}` : ''}
+              </p>
+              {phone ? <p className="ds-caption">{phone}</p> : null}
+            </div>
+            <p className="ds-body" data-testid="confirm-delivery-estimate">
+              Estimated delivery <strong>{deliveryLabel}</strong>
+            </p>
             <p className="ds-body">
               Subtotal <strong>{formatKes(subtotal)}</strong>
             </p>

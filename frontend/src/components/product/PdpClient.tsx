@@ -8,7 +8,7 @@ import { useCart } from '@/components/cart/CartProvider';
 import type { ProductDetail, ProductListItem, ProductReview } from '@/lib/api';
 import { apiGet, apiSend } from '@/lib/api';
 import { formatKes } from '@/lib/format';
-import { accountQuery } from '@/lib/account';
+import { accountQuery, notifyWishlistChanged } from '@/lib/account';
 
 type Props = {
   product: ProductDetail;
@@ -70,6 +70,7 @@ export function PdpClient({ product, related, reviews }: Props) {
         });
         setWishlisted(true);
       }
+      notifyWishlistChanged();
     } catch {
       setError('Could not update wishlist');
     } finally {

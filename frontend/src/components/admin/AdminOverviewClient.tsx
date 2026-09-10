@@ -1,14 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { useAdminUi } from '@/components/admin/AdminUiProvider';
+import {
+  AdminOrderCards,
+  type AdminOrderCardData,
+} from '@/components/admin/AdminOrderCards';
 import { adminGet, type AdminOverview, type LowStockVariant } from '@/lib/admin';
 import { formatKes } from '@/lib/format';
 
+type OverviewPayload = AdminOverview & {
+  recent_orders?: AdminOrderCardData[];
+};
+
 export function AdminOverviewClient() {
   const { ready } = useAdminUi();
-  const [stats, setStats] = useState<AdminOverview | null>(null);
+  const [stats, setStats] = useState<OverviewPayload | null>(null);
   const [lowStock, setLowStock] = useState<LowStockVariant[]>([]);
 
   useEffect(() => {
@@ -17,7 +26,7 @@ export function AdminOverviewClient() {
     async function load() {
       try {
         const [overview, stock] = await Promise.all([
-          adminGet<AdminOverview>('/overview'),
+          adminGet<OverviewPayload>('/overview'),
           adminGet<{ variants: LowStockVariant[] }>('/analytics/low-stock'),
         ]);
         if (!cancelled) {
@@ -62,6 +71,19 @@ export function AdminOverviewClient() {
           </p>
         </div>
       </div>
+
+      <section className="admin-panel" data-testid="recent-orders-panel">
+        <div className="admin-panel__head">
+          <h2 className="ds-display ds-display--sm">Recent orders</h2>
+          <Link href="/admin/orders" className="ds-caption">
+            View all
+          </Link>
+        </div>
+        <AdminOrderCards
+          orders={stats?.recent_orders ?? []}
+          emptyLabel="No recent orders."
+        />
+      </section>
 
       <section className="admin-panel" data-testid="low-stock-panel">
         <h2 className="ds-display ds-display--sm">Low stock alerts</h2>

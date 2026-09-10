@@ -100,16 +100,17 @@ INSERT INTO discounts (code, type, value, max_claims, is_active, context) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO content_blocks (key, data, is_active) VALUES
-  ('hero', '{"headline":"New season basics","subheadline":"Soft tees, tanks, and layers built for everyday","cta_label":"Shop new arrivals","cta_url":"/shop","media_url":"/media/hero.svg"}', true),
+  ('hero', '{"headline":"New season basics","subheadline":"Soft tees, tanks, and layers built for everyday","cta_label":"Shop new arrivals","cta_url":"/shop","media_url":"http://localhost:9000/ecommerce/cms/hero.jpg","media_urls":["http://localhost:9000/ecommerce/cms/hero.jpg","http://localhost:9000/ecommerce/cms/highlight-1.jpg","http://localhost:9000/ecommerce/cms/blog-tees.jpg"],"media_interval_ms":5500}', true),
   ('announcement_bar', '{"messages":["Free delivery over KES 3000","New drops every Thursday","Easy returns within 14 days"]}', true),
-  ('footer', '{"columns":[{"title":"Shop","links":[{"label":"Tees","url":"/shop/tees"}]},{"title":"Support","links":[{"label":"FAQ","url":"/faq"}]}]}', true)
+  ('footer', '{"columns":[{"title":"Shop","links":[{"label":"Tees","url":"/shop/tees"}]},{"title":"Support","links":[{"label":"FAQ","url":"/faq"}]}]}', true),
+  ('delivery_estimate', '{"min_days":3,"max_days":8}', true)
 ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, is_active = EXCLUDED.is_active, updated_at = now();
 
 INSERT INTO highlights (title, media_url, link_url, position, is_active)
 SELECT v.title, v.media_url, v.link_url, v.position, true FROM (VALUES
-  ('New drop', '/media/highlight.svg', '/shop', 1),
-  ('Style guide', '/media/highlight.svg', '/blog', 2),
-  ('Bundles', '/media/highlight.svg', '/shop/bundles', 3)
+  ('New drop', 'http://localhost:9000/ecommerce/cms/highlight-1.jpg', '/shop', 1),
+  ('Style guide', 'http://localhost:9000/ecommerce/cms/highlight-2.jpg', '/blog', 2),
+  ('Bundles', 'http://localhost:9000/ecommerce/cms/highlight-3.jpg', '/shop/bundles', 3)
 ) AS v(title, media_url, link_url, position)
 WHERE NOT EXISTS (SELECT 1 FROM highlights h WHERE h.title = v.title);
 
@@ -149,8 +150,87 @@ WHERE NOT EXISTS (
   SELECT 1 FROM reviews r WHERE r.product_id = p.id AND r.customer_name = v.customer_name
 );
 
-INSERT INTO blog_posts (title, slug, body, status, published_at) VALUES
-  ('How to build a capsule wardrobe', 'capsule-wardrobe-guide', 'Start with neutral tees and tanks...', 'published', now())
-ON CONFLICT (slug) DO NOTHING;
+INSERT INTO blog_posts (title, slug, body, cover_image, status, published_at) VALUES
+  (
+    'How to build a capsule wardrobe',
+    'capsule-wardrobe-guide',
+    E'Start with neutral tees and tanks that layer cleanly.\n\nPick 2–3 base colors, one accent, and fabrics that wash well. A capsule works when every top pairs with at least two bottoms you already own.\n\nTry: essential crew tee, ribbed tank, fine knit sweater.',
+    'http://localhost:9000/ecommerce/cms/blog-capsule.jpg',
+    'published',
+    now() - interval '12 days'
+  ),
+  (
+    'Tee fits: crew, oversized, and heavyweight',
+    'tee-fit-guide',
+    E'Crew necks sit closest to classic — choose them for everyday polish.\n\nOversized cuts add ease through the shoulder; size down if you want structure without bulk.\n\nHeavyweight tees hold shape after washes and read more intentional under a jacket.',
+    'http://localhost:9000/ecommerce/cms/blog-tees.jpg',
+    'published',
+    now() - interval '9 days'
+  ),
+  (
+    'Layering tanks under knits',
+    'tank-layering-tips',
+    E'Tanks are the quiet foundation of warm-to-cool dressing.\n\nSquare and high necks peek cleanly under cardigans; racerbacks keep straps invisible under open knits.\n\nMatch tank length to your knit hem so nothing bunches at the waist.',
+    'http://localhost:9000/ecommerce/cms/blog-tanks.jpg',
+    'published',
+    now() - interval '6 days'
+  ),
+  (
+    'Bodysuit styling for all-day wear',
+    'bodysuit-styling',
+    E'A good bodysuit stays tucked without fighting you.\n\nScoop necks work under blazers; turtlenecks replace a separate base layer in cooler weather.\n\nPair with mid-rise trousers and you are set from desk to dinner.',
+    'http://localhost:9000/ecommerce/cms/blog-bodysuit.jpg',
+    'published',
+    now() - interval '3 days'
+  ),
+  (
+    'Knit textures for Nairobi evenings',
+    'knit-evening-guide',
+    E'Evenings cool quickly — fine knits and cropped cardigans bridge the gap without bulk.\n\nCable vests add texture over a tee; mock necks keep the neckline sharp under a coat.\n\nChoose breathable blends so you are not overheating indoors.',
+    'http://localhost:9000/ecommerce/cms/blog-knits.jpg',
+    'published',
+    now() - interval '1 day'
+  ),
+  (
+    'Color pairing: neutrals with one accent',
+    'color-pairing-basics',
+    E'Build most of the wardrobe in black, ivory, stone, and soft grey.\n\nAdd one recurring accent — rust, olive, or deep blue — so outfits feel intentional without matching sets.\n\nRepeat the accent in a tank, stripe, or knit so pieces talk to each other.',
+    'http://localhost:9000/ecommerce/cms/blog-color.jpg',
+    'published',
+    now()
+  )
+ON CONFLICT (slug) DO UPDATE SET
+  title = EXCLUDED.title,
+  body = EXCLUDED.body,
+  cover_image = EXCLUDED.cover_image,
+  status = EXCLUDED.status,
+  published_at = EXCLUDED.published_at;
+
+-- Demo customers + saved items (wishlist) for admin Saved items screen
+INSERT INTO customers (email, phone, full_name, is_guest)
+SELECT v.email, v.phone, v.full_name, false
+FROM (VALUES
+  ('amina@example.com', '0711111111', 'Amina K.'),
+  ('grace@example.com', '0722222222', 'Grace M.'),
+  ('linda@example.com', '0733333333', 'Linda O.')
+) AS v(email, phone, full_name)
+WHERE NOT EXISTS (SELECT 1 FROM customers c WHERE c.email = v.email);
+
+INSERT INTO wishlist_items (customer_id, product_id)
+SELECT c.id, p.id
+FROM (VALUES
+  ('amina@example.com', 'essential-crew-tee'),
+  ('amina@example.com', 'fine-knit-sweater'),
+  ('grace@example.com', 'ribbed-tank'),
+  ('grace@example.com', 'oversized-tee'),
+  ('grace@example.com', 'scoop-bodysuit'),
+  ('linda@example.com', 'pocket-tee'),
+  ('linda@example.com', 'cropped-cardigan')
+) AS v(email, product_slug)
+JOIN customers c ON c.email = v.email
+JOIN products p ON p.slug = v.product_slug
+WHERE NOT EXISTS (
+  SELECT 1 FROM wishlist_items w WHERE w.customer_id = c.id AND w.product_id = p.id
+);
 
 COMMIT;

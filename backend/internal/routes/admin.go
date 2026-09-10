@@ -7,13 +7,14 @@ import (
 
 	"ecommerce-backend/internal/handlers"
 	"ecommerce-backend/internal/middleware"
+	"ecommerce-backend/internal/storage"
 )
 
 // RegisterAdminRoutes wires up every admin-dashboard endpoint, all behind
 // admin auth. Mirrors feature list section 11 (admin dashboard) and 12
 // (CMS/content control).
-func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
-	h := handlers.New(db, rdb)
+func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, store *storage.Client) {
+	h := handlers.New(db, rdb, store)
 	api := app.Group("/api/admin")
 
 	// Public — issues JWT used by RequireAdminAuth below.
@@ -34,7 +35,8 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 	products.Post("/:id/variants", h.AdminCreateVariant)
 	products.Put("/:id/variants/:variantId", h.AdminUpdateVariant)
 	products.Delete("/:id/variants/:variantId", h.AdminDeleteVariant)
-	products.Post("/:id/images", h.AdminUploadProductImage) // -> MinIO
+	products.Post("/:id/images", h.AdminAddProductImage) // attach URL from /content/media
+	products.Delete("/:id/images/:imageId", h.AdminDeleteProductImage)
 
 	// --- Bundles ---
 	bundles := admin.Group("/bundles")
@@ -48,6 +50,7 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 	orders.Get("/", h.AdminListOrders)
 	orders.Get("/:id", h.AdminGetOrder)
 	orders.Patch("/:id/status", h.AdminUpdateOrderStatus)
+	orders.Patch("/:id/delivery-estimate", h.AdminUpdateOrderDeliveryEstimate)
 
 	// --- Discounts ---
 	discounts := admin.Group("/discounts")
@@ -59,6 +62,7 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 	// --- Customers ---
 	admin.Get("/customers", h.AdminListCustomers)
 	admin.Get("/customers/:id", h.AdminGetCustomer)
+	admin.Get("/saved-items", h.AdminListSavedItems)
 
 	// --- Reviews (approve/feature) ---
 	reviews := admin.Group("/reviews")
@@ -69,6 +73,7 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 	// --- CMS: content blocks, highlights, curated shelves, stats ---
 	content := admin.Group("/content")
 	content.Put("/blocks/:key", h.AdminUpdateContentBlock) // hero, announcement_bar, footer
+	content.Post("/media", h.AdminUploadContentMedia)      // -> MinIO (CMS images)
 	content.Get("/highlights", h.AdminListHighlights)
 	content.Post("/highlights", h.AdminCreateHighlight)
 	content.Put("/highlights/:id", h.AdminUpdateHighlight)
@@ -80,6 +85,7 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 	blog := admin.Group("/blog")
 	blog.Get("/", h.AdminListBlogPosts)
 	blog.Post("/", h.AdminCreateBlogPost)
+	blog.Get("/:id", h.AdminGetBlogPost)
 	blog.Put("/:id", h.AdminUpdateBlogPost)
 	blog.Delete("/:id", h.AdminDeleteBlogPost)
 

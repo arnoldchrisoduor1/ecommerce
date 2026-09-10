@@ -13,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"ecommerce-backend/internal/routes"
+	"ecommerce-backend/internal/storage"
 )
 
 func main() {
@@ -28,8 +29,17 @@ func main() {
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 	defer rdb.Close()
 
+	store, err := storage.ConfigFromEnv()
+	if err != nil {
+		log.Fatalf("failed to init minio: %v", err)
+	}
+	if store == nil {
+		log.Printf("MINIO_ENDPOINT unset — product image uploads will return 501")
+	}
+
 	app := fiber.New(fiber.Config{
-		AppName: "ecommerce-api",
+		AppName:   "ecommerce-api",
+		BodyLimit: 12 * 1024 * 1024, // product photo uploads
 	})
 
 	app.Use(recover.New())
@@ -39,8 +49,8 @@ func main() {
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
 
-	routes.RegisterPublicRoutes(app, dbPool, rdb)
-	routes.RegisterAdminRoutes(app, dbPool, rdb)
+	routes.RegisterPublicRoutes(app, dbPool, rdb, store)
+	routes.RegisterAdminRoutes(app, dbPool, rdb, store)
 
 	port := os.Getenv("PORT")
 	if port == "" {

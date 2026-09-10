@@ -1,7 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
 import { useCart } from '@/components/cart/CartProvider';
+import { apiGet } from '@/lib/api';
+import {
+  accountQuery,
+  WISHLIST_CHANGED_EVENT,
+} from '@/lib/account';
 import type { Category } from '@/lib/api';
 
 type Props = {
@@ -9,9 +15,42 @@ type Props = {
 };
 
 export function MainNav({ categories }: Props) {
-  const { openCart, cart } = useCart();
+  const { openCart, cart, sessionId } = useCart();
   const links = categories.slice(0, 6);
   const count = cart?.item_count ?? 0;
+  const [wishCount, setWishCount] = useState(0);
+
+  const refreshWishlistCount = useCallback(async () => {
+    if (!sessionId) {
+      setWishCount(0);
+      return;
+    }
+    try {
+      const res = await apiGet<{ items: unknown[] }>(
+        `/account/wishlist${accountQuery(sessionId)}`,
+      );
+      setWishCount(res.items?.length ?? 0);
+    } catch {
+      /* keep prior count */
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    void refreshWishlistCount();
+  }, [refreshWishlistCount]);
+
+  useEffect(() => {
+    function onChanged(e: Event) {
+      const detail = (e as CustomEvent<{ count?: number }>).detail;
+      if (typeof detail?.count === 'number') {
+        setWishCount(detail.count);
+        return;
+      }
+      void refreshWishlistCount();
+    }
+    window.addEventListener(WISHLIST_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(WISHLIST_CHANGED_EVENT, onChanged);
+  }, [refreshWishlistCount]);
 
   return (
     <header className="main-nav" data-testid="main-nav">
@@ -42,8 +81,18 @@ export function MainNav({ categories }: Props) {
           <Link href="/search" className="main-nav__icon" aria-label="Search">
             <SearchIcon />
           </Link>
-          <Link href="/wishlist" className="main-nav__icon" aria-label="Wishlist">
+          <Link
+            href="/wishlist"
+            className="main-nav__icon"
+            aria-label={wishCount ? `Wishlist, ${wishCount} items` : 'Wishlist'}
+            data-testid="nav-wishlist"
+          >
             <HeartIcon />
+            {wishCount > 0 ? (
+              <span className="main-nav__badge ds-caption" data-testid="nav-wishlist-count">
+                {wishCount}
+              </span>
+            ) : null}
           </Link>
           <button
             type="button"
@@ -53,7 +102,9 @@ export function MainNav({ categories }: Props) {
             onClick={openCart}
           >
             <BagIcon />
-            {count > 0 ? <span className="main-nav__cart-count ds-caption">{count}</span> : null}
+            {count > 0 ? (
+              <span className="main-nav__badge ds-caption">{count}</span>
+            ) : null}
           </button>
         </div>
       </div>

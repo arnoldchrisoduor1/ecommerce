@@ -10,20 +10,21 @@ import (
 )
 
 type adminProduct struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Slug        string     `json:"slug"`
-	Description *string    `json:"description,omitempty"`
-	CategoryID  *string    `json:"category_id,omitempty"`
-	Material    *string    `json:"material,omitempty"`
-	BasePrice   float64    `json:"base_price"`
-	SalePrice   *float64   `json:"sale_price,omitempty"`
-	IsBundle    bool       `json:"is_bundle"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	Variants    []variant  `json:"variants,omitempty"`
-	Images      []productImage `json:"images,omitempty"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Slug         string         `json:"slug"`
+	Description  *string        `json:"description,omitempty"`
+	CategoryID   *string        `json:"category_id,omitempty"`
+	Material     *string        `json:"material,omitempty"`
+	BasePrice    float64        `json:"base_price"`
+	SalePrice    *float64       `json:"sale_price,omitempty"`
+	IsBundle     bool           `json:"is_bundle"`
+	Status       string         `json:"status"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	Variants     []variant      `json:"variants,omitempty"`
+	Images       []productImage `json:"images,omitempty"`
+	PrimaryImage *productImage  `json:"primary_image,omitempty"`
 }
 
 type adminProductInput struct {
@@ -96,6 +97,33 @@ func (h *Handler) loadAdminProduct(c *fiber.Ctx, productID string, withVariants 
 		}
 		rows.Close()
 	}
+
+	imgRows, err := h.db.Query(c.Context(), `
+		SELECT id, variant_id, url, position
+		FROM product_images
+		WHERE product_id = $1
+		ORDER BY position`, productID)
+	if err != nil {
+		return nil, err
+	}
+	p.Images = make([]productImage, 0)
+	for imgRows.Next() {
+		var img productImage
+		if err := imgRows.Scan(&img.ID, &img.VariantID, &img.URL, &img.Position); err != nil {
+			imgRows.Close()
+			return nil, err
+		}
+		p.Images = append(p.Images, img)
+	}
+	if err := imgRows.Err(); err != nil {
+		imgRows.Close()
+		return nil, err
+	}
+	imgRows.Close()
+	if len(p.Images) > 0 {
+		p.PrimaryImage = &p.Images[0]
+	}
+
 	return &p, nil
 }
 
@@ -112,6 +140,7 @@ func (h *Handler) AdminListProducts(c *fiber.Ctx) error {
 	defer rows.Close()
 
 	products := make([]adminProduct, 0)
+	ids := make([]string, 0)
 	for rows.Next() {
 		var p adminProduct
 		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.CategoryID, &p.Material,
@@ -119,10 +148,24 @@ func (h *Handler) AdminListProducts(c *fiber.Ctx) error {
 			return internalError(c, "AdminListProducts scan", err)
 		}
 		products = append(products, p)
+		ids = append(ids, p.ID)
 	}
 	if err := rows.Err(); err != nil {
 		return internalError(c, "AdminListProducts rows", err)
 	}
+
+	if len(ids) > 0 {
+		images, err := h.fetchPrimaryImagesByProduct(c, ids)
+		if err != nil {
+			return internalError(c, "AdminListProducts images", err)
+		}
+		for i := range products {
+			if img, ok := images[products[i].ID]; ok {
+				products[i].PrimaryImage = img
+			}
+		}
+	}
+
 	return c.JSON(fiber.Map{"products": products})
 }
 
@@ -360,6 +403,88 @@ func (h *Handler) AdminDeleteVariant(c *fiber.Ctx) error {
 	return c.JSON(p)
 }
 
-func (h *Handler) AdminUploadProductImage(c *fiber.Ctx) error {
-	return notImplemented(c)
+func (h *Handler) AdminAddProductImage(c *fiber.Ctx) error {
+	productID := c.Params("id")
+	var exists bool
+	err := h.db.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM products WHERE id = $1)`, productID).Scan(&exists)
+	if err != nil {
+		return internalError(c, "AdminAddProductImage product check", err)
+	}
+	if !exists {
+		return notFound(c, "product not found")
+	}
+
+	var req struct {
+		URL       string  `json:"url"`
+		VariantID *string `json:"variant_id"`
+		Position  *int    `json:"position"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		return badRequest(c, "url is required")
+	}
+
+	var variantPtr *string
+	if req.VariantID != nil && strings.TrimSpace(*req.VariantID) != "" {
+		variantID := strings.TrimSpace(*req.VariantID)
+		var ok bool
+		err := h.db.QueryRow(c.Context(), `
+			SELECT EXISTS(SELECT 1 FROM product_variants WHERE id = $1 AND product_id = $2)`,
+			variantID, productID,
+		).Scan(&ok)
+		if err != nil {
+			return internalError(c, "AdminAddProductImage variant check", err)
+		}
+		if !ok {
+			return badRequest(c, "variant_id does not belong to this product")
+		}
+		variantPtr = &variantID
+	}
+
+	position := 0
+	if req.Position != nil {
+		if *req.Position < 0 {
+			return badRequest(c, "invalid position")
+		}
+		position = *req.Position
+	} else {
+		_ = h.db.QueryRow(c.Context(), `
+			SELECT COALESCE(MAX(position), -1) + 1 FROM product_images WHERE product_id = $1`,
+			productID,
+		).Scan(&position)
+	}
+
+	var img productImage
+	err = h.db.QueryRow(c.Context(), `
+		INSERT INTO product_images (product_id, variant_id, url, position)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, variant_id, url, position`,
+		productID, variantPtr, req.URL, position,
+	).Scan(&img.ID, &img.VariantID, &img.URL, &img.Position)
+	if err != nil {
+		return internalError(c, "AdminAddProductImage insert", err)
+	}
+
+	_, _ = h.db.Exec(c.Context(), `UPDATE products SET updated_at = now() WHERE id = $1`, productID)
+	return c.Status(fiber.StatusCreated).JSON(img)
+}
+
+func (h *Handler) AdminDeleteProductImage(c *fiber.Ctx) error {
+	productID := c.Params("id")
+	imageID := c.Params("imageId")
+
+	tag, err := h.db.Exec(c.Context(), `
+		DELETE FROM product_images WHERE id = $1 AND product_id = $2`, imageID, productID)
+	if err != nil {
+		return internalError(c, "AdminDeleteProductImage delete", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return notFound(c, "image not found")
+	}
+
+	_, _ = h.db.Exec(c.Context(), `UPDATE products SET updated_at = now() WHERE id = $1`, productID)
+	return c.SendStatus(fiber.StatusNoContent)
 }

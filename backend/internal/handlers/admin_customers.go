@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -61,6 +63,85 @@ func (h *Handler) AdminGetCustomer(c *fiber.Ctx) error {
 		return internalError(c, "AdminGetCustomer order count", err)
 	}
 	return c.JSON(cust)
+}
+
+type adminSavedItem struct {
+	ID           string    `json:"id"`
+	SavedAt      time.Time `json:"saved_at"`
+	CustomerID   string    `json:"customer_id"`
+	CustomerName *string   `json:"customer_name,omitempty"`
+	CustomerEmail *string  `json:"customer_email,omitempty"`
+	CustomerPhone *string  `json:"customer_phone,omitempty"`
+	IsGuest      bool      `json:"is_guest"`
+	ProductID    string    `json:"product_id"`
+	ProductName  string    `json:"product_name"`
+	ProductSlug  string    `json:"product_slug"`
+	ProductStatus string   `json:"product_status"`
+	Value        float64   `json:"value"`
+	BasePrice    float64   `json:"base_price"`
+	SalePrice    *float64  `json:"sale_price,omitempty"`
+	ImageURL     *string   `json:"image_url,omitempty"`
+	IsActive     bool      `json:"is_active"`
+}
+
+// AdminListSavedItems returns wishlist rows with customer identity,
+// current product value (sale or base), and whether the product is active.
+// Query: q (min 2 chars — customer name or product name), active=true|false.
+func (h *Handler) AdminListSavedItems(c *fiber.Ctx) error {
+	q := strings.TrimSpace(c.Query("q"))
+	activeFilter := strings.ToLower(strings.TrimSpace(c.Query("active")))
+
+	sql := `
+		SELECT w.id, w.created_at,
+			c.id, c.full_name, c.email, c.phone, c.is_guest,
+			p.id, p.name, p.slug, p.status, p.base_price, p.sale_price,
+			COALESCE(p.sale_price, p.base_price) AS value,
+			(SELECT url FROM product_images pi WHERE pi.product_id = p.id ORDER BY position LIMIT 1)
+		FROM wishlist_items w
+		JOIN customers c ON c.id = w.customer_id
+		JOIN products p ON p.id = w.product_id
+		WHERE 1=1`
+	args := make([]any, 0, 2)
+
+	if len([]rune(q)) >= 2 {
+		args = append(args, "%"+strings.ToLower(q)+"%")
+		sql += fmt.Sprintf(`
+		AND (
+			LOWER(COALESCE(c.full_name, '')) LIKE $%d
+			OR LOWER(p.name) LIKE $%d
+		)`, len(args), len(args))
+	}
+
+	switch activeFilter {
+	case "true", "1", "yes":
+		sql += ` AND p.status = 'active'`
+	case "false", "0", "no":
+		sql += ` AND p.status <> 'active'`
+	}
+
+	sql += ` ORDER BY w.created_at DESC`
+
+	rows, err := h.db.Query(c.Context(), sql, args...)
+	if err != nil {
+		return internalError(c, "AdminListSavedItems query", err)
+	}
+	defer rows.Close()
+
+	items := make([]adminSavedItem, 0)
+	for rows.Next() {
+		var item adminSavedItem
+		if err := rows.Scan(
+			&item.ID, &item.SavedAt,
+			&item.CustomerID, &item.CustomerName, &item.CustomerEmail, &item.CustomerPhone, &item.IsGuest,
+			&item.ProductID, &item.ProductName, &item.ProductSlug, &item.ProductStatus,
+			&item.BasePrice, &item.SalePrice, &item.Value, &item.ImageURL,
+		); err != nil {
+			return internalError(c, "AdminListSavedItems scan", err)
+		}
+		item.IsActive = item.ProductStatus == "active"
+		items = append(items, item)
+	}
+	return c.JSON(fiber.Map{"items": items, "count": len(items)})
 }
 
 type adminReview struct {

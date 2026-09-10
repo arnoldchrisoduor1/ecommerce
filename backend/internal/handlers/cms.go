@@ -41,11 +41,12 @@ type curatedShelfResponse struct {
 }
 
 type blogPostSummary struct {
-	ID           string     `json:"id"`
-	Title        string     `json:"title"`
-	Slug         string     `json:"slug"`
-	CoverImage   *string    `json:"cover_image,omitempty"`
-	PublishedAt  *time.Time `json:"published_at,omitempty"`
+	ID          string     `json:"id"`
+	Title       string     `json:"title"`
+	Slug        string     `json:"slug"`
+	CoverImage  *string    `json:"cover_image,omitempty"`
+	Status      string     `json:"status,omitempty"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
 }
 
 type blogPostDetail struct {

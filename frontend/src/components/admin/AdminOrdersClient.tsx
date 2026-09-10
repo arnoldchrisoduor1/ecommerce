@@ -1,63 +1,110 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { useAdminUi } from '@/components/admin/AdminUiProvider';
+import {
+  AdminOrderCards,
+  type AdminOrderCardData,
+} from '@/components/admin/AdminOrderCards';
 import { adminGet, adminSend } from '@/lib/admin';
-import { formatKes } from '@/lib/format';
 import { Button } from '@/components/ui';
-
-type Order = {
-  id: string;
-  status: string;
-  total: number;
-  payment_status: string;
-  created_at: string;
-};
 
 export function AdminOrdersClient() {
   const { ready } = useAdminUi();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<AdminOrderCardData[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [minDays, setMinDays] = useState(3);
+  const [maxDays, setMaxDays] = useState(8);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const r = await adminGet<{ orders: AdminOrderCardData[] }>('/orders');
+    setOrders(r.orders);
+  }
 
   useEffect(() => {
     if (!ready) return;
-    void adminGet<{ orders: Order[] }>('/orders').then((r) => setOrders(r.orders));
+    void load();
   }, [ready]);
 
   async function setStatus(id: string, status: string) {
     await adminSend(`/orders/${id}/status`, 'PATCH', { status });
-    const r = await adminGet<{ orders: Order[] }>('/orders');
-    setOrders(r.orders);
+    await load();
+  }
+
+  function startEdit(o: AdminOrderCardData) {
+    setEditingId(o.id);
+    setMinDays(o.estimated_delivery_min_days || 3);
+    setMaxDays(o.estimated_delivery_max_days || 8);
+  }
+
+  async function saveEstimate(id: string) {
+    setBusy(true);
+    try {
+      await adminSend(`/orders/${id}/delivery-estimate`, 'PATCH', {
+        estimated_delivery_min_days: minDays,
+        estimated_delivery_max_days: maxDays,
+      });
+      setEditingId(null);
+      await load();
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <AdminShell title="Orders">
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Status</th>
-            <th>Total</th>
-            <th>Payment</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o) => (
-            <tr key={o.id}>
-              <td>{o.id.slice(0, 8)}</td>
-              <td>{o.status}</td>
-              <td>{formatKes(o.total)}</td>
-              <td>{o.payment_status}</td>
-              <td>
+      <AdminOrderCards
+        orders={orders}
+        emptyLabel="No orders yet."
+        actions={(o) => (
+          <>
+            {editingId === o.id ? (
+              <div className="admin-inline-form">
+                <input
+                  type="number"
+                  min={1}
+                  value={minDays}
+                  onChange={(e) => setMinDays(Number(e.target.value))}
+                  aria-label="Min delivery days"
+                  style={{ width: 64 }}
+                />
+                <span>–</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={maxDays}
+                  onChange={(e) => setMaxDays(Number(e.target.value))}
+                  aria-label="Max delivery days"
+                  style={{ width: 64 }}
+                />
+                <span className="ds-caption">business days</span>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void saveEstimate(o.id)}
+                >
+                  Save
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <>
                 <Button variant="ghost" size="sm" onClick={() => void setStatus(o.id, 'paid')}>
                   Mark paid
                 </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                <Button variant="ghost" size="sm" onClick={() => startEdit(o)}>
+                  Edit estimate
+                </Button>
+              </>
+            )}
+          </>
+        )}
+      />
     </AdminShell>
   );
 }

@@ -1,0 +1,8 @@
+# Local deploy outputs (do not commit)
+deploy/artifacts/
+deploy-logs/
+.tmp/
+backend/api.exe
+backend/api.exe~
+.env
+*.pem

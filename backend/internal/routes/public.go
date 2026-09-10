@@ -6,13 +6,14 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"ecommerce-backend/internal/handlers"
+	"ecommerce-backend/internal/storage"
 )
 
 // RegisterPublicRoutes wires up every storefront-facing endpoint.
 // Grouped to mirror the feature list sections so it's easy to cross-
 // reference against docs/SPEC.md while implementing handlers.
-func RegisterPublicRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
-	h := handlers.New(db, rdb)
+func RegisterPublicRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, store *storage.Client) {
+	h := handlers.New(db, rdb, store)
 	api := app.Group("/api")
 
 	// --- Section 2/3: Catalog (categories, products, variants) ---

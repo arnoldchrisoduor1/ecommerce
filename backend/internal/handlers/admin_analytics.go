@@ -9,10 +9,11 @@ import (
 )
 
 type adminOverviewResponse struct {
-	OrdersToday      int     `json:"orders_today"`
-	RevenueToday     float64 `json:"revenue_today"`
-	ActiveViewers    int64   `json:"active_viewers"`
-	DiscountClaimsToday int  `json:"discount_claims_today"`
+	OrdersToday         int              `json:"orders_today"`
+	RevenueToday        float64          `json:"revenue_today"`
+	ActiveViewers       int64            `json:"active_viewers"`
+	DiscountClaimsToday int              `json:"discount_claims_today"`
+	RecentOrders        []adminOrderCard `json:"recent_orders"`
 }
 
 type lowStockVariant struct {
@@ -53,11 +54,17 @@ func (h *Handler) AdminOverview(c *fiber.Ctx) error {
 		return internalError(c, "AdminOverview viewers", err)
 	}
 
+	recent, err := h.listAdminOrderCards(ctx, 8)
+	if err != nil {
+		return internalError(c, "AdminOverview recent orders", err)
+	}
+
 	return c.JSON(adminOverviewResponse{
 		OrdersToday:         ordersToday,
 		RevenueToday:        revenueToday,
 		ActiveViewers:       viewers,
 		DiscountClaimsToday: claimsToday,
+		RecentOrders:        recent,
 	})
 }
 

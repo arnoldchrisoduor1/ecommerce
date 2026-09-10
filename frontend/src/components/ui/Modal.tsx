@@ -12,6 +12,8 @@ export type ModalProps = {
   children: ReactNode;
   /** Exit-intent / offer layout */
   offer?: boolean;
+  /** Extra classes for the panel (e.g. quick-view width) */
+  panelClassName?: string;
   /** Promo code block for offer variant */
   code?: string;
   claimsLabel?: string;
@@ -26,6 +28,7 @@ export function Modal({
   eyebrow,
   children,
   offer = false,
+  panelClassName = '',
   code,
   claimsLabel,
   dismissLabel = 'No thanks',
@@ -47,9 +50,13 @@ export function Modal({
 
   if (!open) return null;
 
-  const panelClass = offer
-    ? 'ds-modal__panel ds-modal__panel--offer'
-    : 'ds-modal__panel';
+  const panelClass = [
+    'ds-modal__panel',
+    offer ? 'ds-modal__panel--offer' : '',
+    panelClassName,
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className="ds-modal" role="dialog" aria-modal="true" data-testid={testId}>

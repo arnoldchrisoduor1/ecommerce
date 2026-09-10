@@ -241,17 +241,17 @@ func (h *Handler) AdminSetStatsCounter(c *fiber.Ctx) error {
 
 func (h *Handler) AdminListBlogPosts(c *fiber.Ctx) error {
 	rows, err := h.db.Query(c.Context(), `
-		SELECT id, title, slug, cover_image, published_at
+		SELECT id, title, slug, body, cover_image, status, published_at
 		FROM blog_posts ORDER BY created_at DESC`)
 	if err != nil {
 		return internalError(c, "AdminListBlogPosts query", err)
 	}
 	defer rows.Close()
 
-	posts := make([]blogPostSummary, 0)
+	posts := make([]blogPostDetail, 0)
 	for rows.Next() {
-		var p blogPostSummary
-		if err := rows.Scan(&p.ID, &p.Title, &p.Slug, &p.CoverImage, &p.PublishedAt); err != nil {
+		var p blogPostDetail
+		if err := rows.Scan(&p.ID, &p.Title, &p.Slug, &p.Body, &p.CoverImage, &p.Status, &p.PublishedAt); err != nil {
 			return internalError(c, "AdminListBlogPosts scan", err)
 		}
 		posts = append(posts, p)
@@ -275,12 +275,17 @@ func (h *Handler) AdminCreateBlogPost(c *fiber.Ctx) error {
 	if status != "draft" && status != "published" {
 		return badRequest(c, "invalid status")
 	}
+	publishedAt := req.PublishedAt
+	if status == "published" && publishedAt == nil {
+		now := time.Now().UTC()
+		publishedAt = &now
+	}
 
 	var id string
 	err := h.db.QueryRow(c.Context(), `
 		INSERT INTO blog_posts (title, slug, body, cover_image, status, published_at)
 		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		req.Title, req.Slug, req.Body, req.CoverImage, status, req.PublishedAt,
+		req.Title, req.Slug, req.Body, req.CoverImage, status, publishedAt,
 	).Scan(&id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
@@ -289,23 +294,19 @@ func (h *Handler) AdminCreateBlogPost(c *fiber.Ctx) error {
 		return internalError(c, "AdminCreateBlogPost insert", err)
 	}
 
-	var p blogPostDetail
-	err = h.db.QueryRow(c.Context(), `
-		SELECT id, title, slug, body, cover_image, published_at
-		FROM blog_posts WHERE id = $1`, id,
-	).Scan(&p.ID, &p.Title, &p.Slug, &p.Body, &p.CoverImage, &p.PublishedAt)
-	if err != nil {
-		return internalError(c, "AdminCreateBlogPost load", err)
-	}
-	return c.Status(fiber.StatusCreated).JSON(p)
+	return h.adminGetBlogPostByID(c.Status(fiber.StatusCreated), id)
+}
+
+func (h *Handler) AdminGetBlogPost(c *fiber.Ctx) error {
+	return h.adminGetBlogPostByID(c, c.Params("id"))
 }
 
 func (h *Handler) adminGetBlogPostByID(c *fiber.Ctx, id string) error {
 	var p blogPostDetail
 	err := h.db.QueryRow(c.Context(), `
-		SELECT id, title, slug, body, cover_image, published_at
+		SELECT id, title, slug, body, cover_image, status, published_at
 		FROM blog_posts WHERE id = $1`, id,
-	).Scan(&p.ID, &p.Title, &p.Slug, &p.Body, &p.CoverImage, &p.PublishedAt)
+	).Scan(&p.ID, &p.Title, &p.Slug, &p.Body, &p.CoverImage, &p.Status, &p.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return notFound(c, "blog post not found")
 	}

@@ -1,0 +1,29 @@
+# ecomm-api.oduor-arnold.com → Go API (127.0.0.1:8081)
+# /media/ → MinIO bucket (127.0.0.1:9000/ecommerce/)
+# Certbot will add listen 443 / ssl_* lines on first issuance.
+
+server {
+    listen 80;
+    server_name ecomm-api.oduor-arnold.com;
+
+    client_max_body_size 15m;
+
+    location /media/ {
+        proxy_pass http://127.0.0.1:9000/ecommerce/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}

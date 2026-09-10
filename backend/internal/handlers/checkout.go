@@ -24,9 +24,12 @@ type deliveryQuoteRequest struct {
 }
 
 type deliveryQuoteResponse struct {
-	DeliveryFee   float64 `json:"delivery_fee"`
-	EstimatedDays int     `json:"estimated_days"`
-	Courier       string  `json:"courier"`
+	DeliveryFee             float64 `json:"delivery_fee"`
+	EstimatedDays           int     `json:"estimated_days"`
+	EstimatedDeliveryMinDays int    `json:"estimated_delivery_min_days"`
+	EstimatedDeliveryMaxDays int    `json:"estimated_delivery_max_days"`
+	EstimatedDeliveryLabel  string  `json:"estimated_delivery_label"`
+	Courier                 string  `json:"courier"`
 }
 
 type createOrderRequest struct {
@@ -38,16 +41,19 @@ type createOrderRequest struct {
 }
 
 type orderResponse struct {
-	ID             string          `json:"id"`
-	Status         string          `json:"status"`
-	Subtotal       float64         `json:"subtotal"`
-	DeliveryFee    float64         `json:"delivery_fee"`
-	DiscountAmount float64         `json:"discount_amount"`
-	Total          float64         `json:"total"`
-	PaymentMethod  *string         `json:"payment_method,omitempty"`
-	PaymentStatus  string          `json:"payment_status"`
-	ShippingAddress json.RawMessage `json:"shipping_address"`
-	DiscountCode   *string         `json:"discount_code,omitempty"`
+	ID                       string          `json:"id"`
+	Status                   string          `json:"status"`
+	Subtotal                 float64         `json:"subtotal"`
+	DeliveryFee              float64         `json:"delivery_fee"`
+	DiscountAmount           float64         `json:"discount_amount"`
+	Total                    float64         `json:"total"`
+	PaymentMethod            *string         `json:"payment_method,omitempty"`
+	PaymentStatus            string          `json:"payment_status"`
+	ShippingAddress          json.RawMessage `json:"shipping_address"`
+	DiscountCode             *string         `json:"discount_code,omitempty"`
+	EstimatedDeliveryMinDays int             `json:"estimated_delivery_min_days"`
+	EstimatedDeliveryMaxDays int             `json:"estimated_delivery_max_days"`
+	EstimatedDeliveryLabel   string          `json:"estimated_delivery_label"`
 }
 
 func validateShippingAddress(addr shippingAddress) error {
@@ -80,10 +86,14 @@ func (h *Handler) DeliveryQuote(c *fiber.Ctx) error {
 		return notFound(c, "cart not found")
 	}
 
+	est := loadDeliveryEstimate(c.Context(), h.db)
 	return c.JSON(deliveryQuoteResponse{
-		DeliveryFee:   stubDeliveryFee,
-		EstimatedDays: 2,
-		Courier:       "Test Courier",
+		DeliveryFee:              stubDeliveryFee,
+		EstimatedDays:            est.MaxDays,
+		EstimatedDeliveryMinDays: est.MinDays,
+		EstimatedDeliveryMaxDays: est.MaxDays,
+		EstimatedDeliveryLabel:   formatDeliveryEstimateLabel(est.MinDays, est.MaxDays),
+		Courier:                  "Test Courier",
 	})
 }
 
@@ -227,15 +237,18 @@ func (h *Handler) CreateOrder(c *fiber.Ctx) error {
 		total = 0
 	}
 
+	est := loadDeliveryEstimate(c.Context(), h.db)
+
 	var orderID string
 	err = tx.QueryRow(c.Context(), `
 		INSERT INTO orders (
 			customer_id, status, subtotal, delivery_fee, discount_amount, total,
-			payment_method, payment_status, shipping_address, discount_code
-		) VALUES ($1, 'pending', $2, $3, $4, $5, $6, 'unpaid', $7, $8)
+			payment_method, payment_status, shipping_address, discount_code,
+			estimated_delivery_min_days, estimated_delivery_max_days
+		) VALUES ($1, 'pending', $2, $3, $4, $5, $6, 'unpaid', $7, $8, $9, $10)
 		RETURNING id`,
 		customerID, subtotal, deliveryFee, discountAmount, total,
-		req.PaymentMethod, addrJSON, discountCode,
+		req.PaymentMethod, addrJSON, discountCode, est.MinDays, est.MaxDays,
 	).Scan(&orderID)
 	if err != nil {
 		return internalError(c, "CreateOrder insert order", err)
@@ -273,16 +286,19 @@ func (h *Handler) CreateOrder(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(orderResponse{
-		ID:              orderID,
-		Status:          "pending",
-		Subtotal:        subtotal,
-		DeliveryFee:     deliveryFee,
-		DiscountAmount:  discountAmount,
-		Total:           total,
-		PaymentMethod:   &req.PaymentMethod,
-		PaymentStatus:   "unpaid",
-		ShippingAddress: addrJSON,
-		DiscountCode:    discountCode,
+		ID:                       orderID,
+		Status:                   "pending",
+		Subtotal:                 subtotal,
+		DeliveryFee:              deliveryFee,
+		DiscountAmount:           discountAmount,
+		Total:                    total,
+		PaymentMethod:            &req.PaymentMethod,
+		PaymentStatus:            "unpaid",
+		ShippingAddress:          addrJSON,
+		DiscountCode:             discountCode,
+		EstimatedDeliveryMinDays: est.MinDays,
+		EstimatedDeliveryMaxDays: est.MaxDays,
+		EstimatedDeliveryLabel:   formatDeliveryEstimateLabel(est.MinDays, est.MaxDays),
 	})
 }
 
