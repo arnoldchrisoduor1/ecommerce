@@ -133,7 +133,7 @@ check_artifacts() {
 
 check_ports() {
   log "Checking host ports..."
-  local port owner
+  local port owne
   for port in 80 443 "$FRONTEND_HOST_PORT" "$BACKEND_HOST_PORT" "$MINIO_HOST_PORT"; do
     owner="$(sudo ss -tulpn 2>/dev/null | awk -v p=":$port" '$5 ~ p"$" {print; exit}')"
     if [[ -z "$owner" ]]; then
@@ -179,7 +179,13 @@ prune_disk_if_needed() {
 compose_up() {
   log "Building runtime images (COPY only) + starting stack"
   pushd "$ROOT/deploy" >/dev/null
-  must_long "docker compose build" "${COMPOSE[@]}" build backend frontend
+  # Tiny VPS (~400MB RAM): never build FE+BE in parallel — BuildKit cancels with
+  # "context canceled" when both load large COPY contexts at once.
+  log "Stopping app containers to free RAM before image build"
+  "${COMPOSE[@]}" stop backend frontend 2>/dev/null || true
+  export BUILDKIT_MAX_PARALLELISM=1
+  must_long "docker compose build backend" "${COMPOSE[@]}" build backend
+  must_long "docker compose build frontend" "${COMPOSE[@]}" build frontend
   must_long "docker compose up" "${COMPOSE[@]}" up -d --remove-orphans
   popd >/dev/null
   log "Waiting for containers..."
