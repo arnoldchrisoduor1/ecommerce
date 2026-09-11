@@ -1,5 +1,6 @@
 # Local deploy outputs (do not commit)
 deploy/artifacts/
+deploy/.env
 deploy-logs/
 .tmp/
 backend/api.exe

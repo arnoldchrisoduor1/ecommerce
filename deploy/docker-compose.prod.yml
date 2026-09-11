@@ -1,20 +1,20 @@
-# Production stack for ~/ecommerce on the VPS.
-# Artifacts are prebuilt on the laptop — these Dockerfiles only COPY binaries.
+﻿# Production stack for /root/ecommerce on hauseoftech (204.48.30.58).
+# Secrets and host ports live in deploy/.env (see .env.example) — not here.
 #
-# Internal ports (host-bound to loopback only):
-#   frontend  → 127.0.0.1:3080
-#   backend   → 127.0.0.1:8081
-#   minio     → 127.0.0.1:9000  (nginx media proxy)
-# postgres/redis stay on the compose network (no host publish).
+# Default host binds (override in .env if needed):
+#   frontend  → 127.0.0.1:${FRONTEND_HOST_PORT:-3082}
+#   backend   → 127.0.0.1:${BACKEND_HOST_PORT:-8082}
+#   minio     → 127.0.0.1:${MINIO_HOST_PORT:-9002}
 
 services:
   postgres:
     image: postgres:15-alpine
     restart: unless-stopped
+    env_file: .env
     environment:
-      POSTGRES_DB: ecommerce
-      POSTGRES_USER: ecommerce
-      POSTGRES_PASSWORD: ecommerce
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     command:
@@ -24,7 +24,7 @@ services:
       - -c
       - max_connections=50
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ecommerce"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 15
@@ -54,10 +54,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file: .env
     environment:
-      FLYWAY_URL: jdbc:postgresql://postgres:5432/ecommerce
-      FLYWAY_USER: ecommerce
-      FLYWAY_PASSWORD: ecommerce
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      FLYWAY_USER: ${POSTGRES_USER}
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ../db/migrations:/flyway/sql:ro
       - ../flyway.conf:/flyway/conf/flyway.conf:ro
@@ -68,11 +69,12 @@ services:
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
+    env_file: .env
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:${MINIO_HOST_PORT:-9002}:9000"
     volumes:
       - minio_data:/data
     deploy:
@@ -84,19 +86,21 @@ services:
     image: minio/mc:latest
     depends_on:
       - minio
+    env_file: .env
     entrypoint: >
       /bin/sh -c "
       for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-        mc alias set local http://minio:9000 minioadmin minioadmin && break;
+        mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" && break;
         sleep 2;
       done;
-      mc mb -p local/ecommerce || true;
-      mc anonymous set download local/ecommerce;
+      mc mb -p local/$$MINIO_BUCKET || true;
+      mc anonymous set download local/$$MINIO_BUCKET;
       exit 0;
       "
     restart: "no"
 
   backend:
+    image: ecommerce-backend:runtime
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -112,50 +116,33 @@ services:
         condition: service_completed_successfully
       createbuckets:
         condition: service_completed_successfully
-    environment:
-      DATABASE_URL: postgres://ecommerce:ecommerce@postgres:5432/ecommerce
-      REDIS_ADDR: redis:6379
-      CORS_ALLOW_ORIGINS: https://ecommerce.oduor-arnold.com
-      PORT: "8080"
-      MPESA_CONSUMER_KEY: ""
-      MPESA_CONSUMER_SECRET: ""
-      MPESA_SHORTCODE: "174379"
-      MPESA_PASSKEY: ""
-      MPESA_CALLBACK_URL: https://ecomm-api.oduor-arnold.com/api/payments/mpesa/callback
-      MPESA_ENV: sandbox
-      ADMIN_EMAIL: admin@example.com
-      ADMIN_PASSWORD: change-me-in-production
-      ADMIN_JWT_SECRET: dev-only-change-me-to-a-long-random-string-at-least-32-chars
-      PRESENCE_TTL_SECONDS: "60"
-      ANTHROPIC_API_KEY: ""
-      ANTHROPIC_MODEL: claude-sonnet-4-20250514
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET: ecommerce
-      MINIO_USE_SSL: "false"
-      MINIO_PUBLIC_BASE_URL: https://ecomm-api.oduor-arnold.com/media
+    env_file: .env
+    volumes:
+      - ./artifacts/api:/usr/local/bin/api:ro
     ports:
-      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:${BACKEND_HOST_PORT:-8082}:8080"
     deploy:
       resources:
         limits:
           memory: 96M
 
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
+    image: node:22-alpine
     restart: unless-stopped
     depends_on:
       - backend
+    working_dir: /app
+    env_file: .env
+    volumes:
+      - ./artifacts/frontend:/app:ro
     environment:
-      # Server-side fetches + Next rewrites target the compose service name.
-      API_URL: http://backend:8080
+      API_URL: ${API_URL:-http://backend:8080}
       PORT: "3000"
-      HOSTNAME: 0.0.0.0
+      HOSTNAME: ${HOSTNAME:-0.0.0.0}
+      NODE_ENV: ${NODE_ENV:-production}
+    command: ["node", "server.js"]
     ports:
-      - "127.0.0.1:3080:3000"
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-3082}:3000"
     deploy:
       resources:
         limits:

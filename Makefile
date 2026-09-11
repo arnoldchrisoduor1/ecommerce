@@ -1,4 +1,4 @@
-.PHONY: migrate migrate-info migrate-validate seed sync-design
+.PHONY: migrate migrate-info migrate-validate seed sync-design deploy
 
 migrate:
 	docker compose run --rm flyway migrate
@@ -17,3 +17,7 @@ sync-design:
 	mkdir -p frontend/src/styles
 	cp design-system/ecommerce-storefront/tokens.css frontend/src/styles/tokens.css
 	cp design-system/ecommerce-storefront/components.css frontend/src/styles/components.css
+
+# WSL entrypoint — pass args after -- e.g. make deploy ARGS=e2e
+deploy:
+	wsl -e bash -lc 'cd /mnt/c/dev/ecommerce && chmod +x deploy.sh && ./deploy.sh $(ARGS)'

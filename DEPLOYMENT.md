@@ -1,135 +1,65 @@
-# Production deployment — ecommerce platform
+# Production deployment — ecommerce → hauseoftech (`204.48.30.58`)
 
-## Recon summary (server `ubuntu@3.109.5.252` / `ip-172-26-7-170`)
-
-| Item | Finding |
-|------|---------|
-| Deploy home | `/home/ubuntu/ecommerce` (alongside `digitalwilderness`, `emailservice`, `portfolio_v3`) |
-| Swap | **6GB already** (`/swapfile` 2G + `/swapfile2` 4G) — server script skips creating more |
-| RAM | ~414MB — stack uses loopback-bound ports + memory limits; expects swap |
-| Disk | ~19GB root, ~5–6GB free — script prunes Docker cache if &lt;2.5GB free |
-| Nginx | Existing sites for portfolio/mailer/wilderness; **no** ecommerce sites yet (created fresh) |
-| Pattern | Host nginx → `127.0.0.1:<port>` (same as other apps) + Certbot |
-| Arch | `x86_64` |
-
-## SSH / PEM setup
-
-1. Key lives at `%USERPROFILE%\.ssh\digitalwilderness-1.pem` (moved out of OneDrive; permissions locked with `icacls`).
-2. SSH config host alias:
-
-```
-Host dw-ecomm
-    HostName 3.109.5.252
-    User ubuntu
-    IdentityFile ~/.ssh/digitalwilderness-1.pem
-    IdentitiesOnly yes
-```
-
-3. Connect with: `ssh dw-ecomm`  
-   Never pass the raw `.pem` path or IP in deploy scripts.
-
-WSL users: mirror the same `Host dw-ecomm` block in `~/.ssh/config` (scripts use WSL `rsync`/`ssh`).
-
-## Architecture
-
-- **No compile on the server.** Laptop builds:
-  - Go binary → `GOOS=linux GOARCH=amd64`
-  - Next.js `output: 'standalone'`, then **WSL packaging** so Windows symlinks become real files for Linux, shipped as `frontend.tar.gz`
-- Artifacts rsync’d to the VPS over `dw-ecomm`
-- Server `docker compose` only **COPY**s artifacts into slim runtime images (build context = `deploy/`)
-- Nginx terminates TLS and proxies:
-  - `ecommerce.oduor-arnold.com` → `127.0.0.1:3080` (frontend)
-  - `ecomm-api.oduor-arnold.com` → `127.0.0.1:8081` (API)
-  - `ecomm-api.oduor-arnold.com/media/` → MinIO bucket
-
-## DNS + TLS
-
-Containers and nginx are verified healthy over HTTP. Let's Encrypt currently reports **NXDOMAIN** for both subdomains — public HTTPS will work only after A records exist:
-
-| Host | Type | Value |
-|------|------|-------|
-| `ecommerce.oduor-arnold.com` | A | `3.109.5.252` |
-| `ecomm-api.oduor-arnold.com` | A | `3.109.5.252` |
-
-After DNS propagates, on the server run menu option **3** (`Nginx + certbot only`) or:
+## One command (WSL)
 
 ```bash
-ssh dw-ecomm
-cd ~/ecommerce && bash scripts/deploy-server.sh   # choose 3
+cd /mnt/c/dev/ecommerce
+./deploy.sh            # interactive menu
+./deploy.sh e2e        # test + build + git + sync + server
+./deploy.sh build      # FE+BE only
+./deploy.sh test       # go vet/build
+./deploy.sh git        # commit + push
+./deploy.sh sync       # rsync + remote deploy
+./deploy.sh release    # build + sync + server (no git/test)
+./deploy.sh remote     # server script only
+./deploy.sh --help
 ```
 
-Certbot failure is non-fatal on first deploy so the stack still comes up on HTTP.
-
-## How to run
-
-### Local (Windows)
-
-```powershell
-cd C:\dev\ecommerce
-.\scripts\deploy-local.ps1
-```
-
-**Menu**
+From PowerShell: `.\scripts\deploy-local.ps1` (wraps WSL `./deploy.sh`).
 
 | # | Action |
 |---|--------|
-| **1 (default)** | Build FE+BE, git commit/push, rsync, run server script |
-| 2 | Frontend only (build + sync) |
-| 3 | Backend only (build + sync) |
-| 4 | Sync existing artifacts (no rebuild) |
-| 5 | Build only (no git / no sync) |
-| 6 | Build FE+BE, commit/push only (no sync) |
+| **1 / e2e** | Test + build + git push + sync + server deploy |
+| 2 / build | Build FE+BE locally |
+| 3 / test | Local go vet/build |
+| 4 / git | Commit + push |
+| 5 / sync | Sync artifacts + server deploy |
+| 6 / release | Build + sync + server |
+| 7 / remote | Server deploy only |
+| 8 / env | Env file setup |
+| 9 / be | Backend build only |
+| 10 / fe | Frontend build only |
 
-Press Enter to accept defaults. Confirm before slow/destructive steps.
+Support code: `scripts/lib/*.sh`, server: `scripts/deploy-server.sh`.
 
-### Server
+## Target server
 
-After a sync (or from menu option 1):
+| Item | Value |
+|------|-------|
+| Host | `204.48.30.58` (hostname `hauseoftech`) |
+| SSH | `root` + `%USERPROFILE%\.ssh\id_ed25519` (or `ECOMM_SSH_KEY`) |
+| Deploy home | `/root/ecommerce` |
+| Ports | FE `:3082`, API `:8082`, MinIO `:9002` |
 
 ```bash
-ssh dw-ecomm
-cd ~/ecommerce
-bash scripts/deploy-server.sh
-```
-
-**Menu**
-
-| # | Action |
-|---|--------|
-| **1 (default)** | Swap check + ports + compose up + **seed** + nginx/ssl + health |
-| 2 | Compose only (rebuild/restart + **seed**) |
-| 3 | Nginx + certbot only |
-| 4 | Health checks only |
-| 5 | Seed database only (`db/seed.sql` → postgres) |
-
-## Logs
-
-- Local: `deploy-logs/local-deploy-<timestamp>.log`
-- Server: `~/ecommerce/deploy-logs/server-deploy-<timestamp>.log`
-
-Long steps print a heartbeat every ~10–20s so the terminal is never silent for minutes.
-
-## Repo layout
-
-```
-deploy/
-  docker-compose.prod.yml
-  Dockerfile.backend
-  Dockerfile.frontend
-  nginx/
-    ecommerce.oduor-arnold.com
-    ecomm-api.oduor-arnold.com
-  artifacts/          # gitignored build outputs
-scripts/
-  deploy-local.ps1
-  deploy-server.sh
-DEPLOYMENT.md
+export ECOMM_SSH_HOST=root@204.48.30.58
+export ECOMM_REMOTE_ROOT=/root/ecommerce
+export ECOMM_SSH_KEY=$HOME/.ssh/id_ed25519
+export ECOMM_MODE=2          # server menu when remote-run
+export ECOMM_NONINTERACTIVE=1
 ```
 
 ## Secrets
 
-Production env vars currently live in `deploy/docker-compose.prod.yml` (same approach as local compose). Change `ADMIN_*`, DB, and MinIO passwords before real traffic.
+- Not in compose — use `deploy/.env` (from `deploy/.env.example`)
+- `./deploy.sh` prompts: use local / edit / editor / skip sync
 
-## Why rsync (not git-pull for artifacts)
+## Architecture
 
-Git holds source + infra. Build outputs (`deploy/artifacts/`) are large/binary and platform-specific; rsync over `dw-ecomm` pushes only what the server needs without compiling on the VPS.
+- Build on laptop (Go linux/amd64 + Next standalone → `frontend.tar.gz`)
+- Rsync to VPS; bind-mount artifacts; prune after successful deploy
+- Nginx templates from `.env` domains/ports
+
+## DNS + TLS
+
+Point A records for domains in `deploy/.env` at `204.48.30.58`, then `./deploy.sh remote` with `ECOMM_MODE=3`.

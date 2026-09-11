@@ -1,8 +1,6 @@
-# Runtime image — Go binary is cross-compiled on the laptop (no compile here).
-# Build context: deploy/
+# One-time base image: alpine + CA certs.
+# The Go binary is bind-mounted at runtime (see docker-compose.prod.yml) —
+# do NOT COPY artifacts here (that made deploys thrash a 400MB VPS).
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
-COPY artifacts/api /usr/local/bin/api
-RUN chmod +x /usr/local/bin/api
-EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/api"]
