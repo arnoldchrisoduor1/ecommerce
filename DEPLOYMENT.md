@@ -51,8 +51,10 @@ export ECOMM_NONINTERACTIVE=1
 
 ## Secrets
 
-- Not in compose — use `deploy/.env` (from `deploy/.env.example`)
-- `./deploy.sh` prompts: use local / edit / editor / skip sync
+- **Source of truth:** repo root `.env` (gitignored)
+- Template: `.env.example` (includes FE/BE/Postgres/MinIO/ports/domains)
+- `./deploy.sh` asks to **copy root `.env` → `deploy/.env`** (adapts localhost→compose service names), then rsyncs to the VPS
+- Nothing secret in `docker-compose.prod.yml` — only `${VAR}` + `env_file: .env`
 
 ## Architecture
 
