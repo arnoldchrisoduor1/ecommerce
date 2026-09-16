@@ -1,28 +1,36 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import type { HeroData } from '@/lib/api';
-import { heroMediaUrls } from '@/lib/api';
+import { heroSlides } from '@/lib/api';
 
 type Props = {
   hero: HeroData;
 };
 
+function srcSetFor(url: string): string | undefined {
+  // Same asset at multiple density hints — desktop browsers prefer the largest.
+  // When a resize CDN exists, swap these for width-specific derivatives.
+  if (!url || url.startsWith('data:') || url.endsWith('.svg')) return undefined;
+  return `${url} 800w, ${url} 1280w, ${url} 1920w`;
+}
+
 export function Hero({ hero }: Props) {
   const headline = hero.headline || 'New season';
   const ctaLabel = hero.cta_label || 'Shop';
   const ctaUrl = hero.cta_url || '/shop';
-  const slides = heroMediaUrls(hero);
+  const slides = heroSlides(hero);
   const intervalMs =
     typeof hero.media_interval_ms === 'number' && hero.media_interval_ms >= 2000
       ? hero.media_interval_ms
       : 5500;
   const [active, setActive] = useState(0);
+  const slideKey = slides.map((s) => s.url).join('|');
 
   useEffect(() => {
     setActive(0);
-  }, [slides.join('|')]);
+  }, [slideKey]);
 
   useEffect(() => {
     if (slides.length < 2) return;
@@ -30,23 +38,40 @@ export function Hero({ hero }: Props) {
       setActive((i) => (i + 1) % slides.length);
     }, intervalMs);
     return () => window.clearInterval(id);
-  }, [slides.length, intervalMs]);
+  }, [slides.length, intervalMs, slideKey]);
 
   return (
     <section className="hero" data-testid="hero-section" aria-label="Hero">
       {slides.length ? (
         <div className="hero__media-stack" aria-hidden="true">
-          {slides.map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={src}
-              className={`hero__media${i === active ? ' hero__media--active' : ''}`}
-              src={src}
-              alt=""
-              fetchPriority={i === 0 ? 'high' : 'low'}
-              decoding="async"
-            />
-          ))}
+          {slides.map((slide, i) => {
+            const fx = slide.focal_x ?? 0.5;
+            const fy = slide.focal_y ?? 0.5;
+            const srcSet = srcSetFor(slide.url);
+            return (
+              <div
+                key={`${slide.url}-${i}`}
+                className={`hero__frame${i === active ? ' hero__frame--active' : ''}`}
+                style={
+                  {
+                    '--hero-focal-x': String(fx),
+                    '--hero-focal-y': String(fy),
+                  } as CSSProperties
+                }
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  className="hero__media"
+                  src={slide.url}
+                  srcSet={srcSet}
+                  sizes="100vw"
+                  alt=""
+                  fetchPriority={i === 0 ? 'high' : 'low'}
+                  decoding="async"
+                />
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="hero__media hero__media--fallback" aria-hidden="true" />
@@ -65,9 +90,9 @@ export function Hero({ hero }: Props) {
       </div>
       {slides.length > 1 ? (
         <div className="hero__dots" role="tablist" aria-label="Hero slides">
-          {slides.map((src, i) => (
+          {slides.map((slide, i) => (
             <button
-              key={src}
+              key={`${slide.url}-dot-${i}`}
               type="button"
               role="tab"
               aria-selected={i === active}

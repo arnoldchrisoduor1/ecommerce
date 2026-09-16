@@ -1,0 +1,445 @@
+/* Demo mascot — Task 17. Imported only from DemoMascotClient (demo builds). */
+
+.demo-mascot {
+  --demo-dock-bottom: calc(
+    var(--float-edge) + var(--float-back-top-size) + var(--space-3)
+  );
+  pointer-events: none;
+}
+
+.demo-mascot__welcome,
+.demo-mascot__dock,
+.demo-mascot__welcome-card,
+.demo-mascot__fab,
+.demo-mascot__tab,
+.demo-mascot__bubble,
+.demo-mascot__card,
+.demo-mascot__collapse,
+.demo-mascot__btn,
+.demo-mascot__dismiss,
+.demo-mascot__card-close,
+.demo-mascot__card-link {
+  pointer-events: auto;
+}
+
+/* ----- Welcome modal ----- */
+.demo-mascot__welcome {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.demo-mascot__welcome-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--color-scrim);
+}
+
+.demo-mascot__welcome-card {
+  position: relative;
+  width: min(100%, 24rem);
+  padding: var(--space-8) var(--space-6) var(--space-6);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--color-accent-muted) 55%, var(--color-bg)) 0%,
+      var(--color-bg) 42%,
+      var(--color-bg) 100%
+    );
+  border: var(--border-width) solid var(--color-border);
+  box-shadow: var(--shadow-modal);
+  text-align: center;
+  animation: demo-welcome-in var(--duration-slow) var(--ease-out) both;
+}
+
+.demo-mascot__welcome-mark {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto var(--space-4);
+}
+
+.demo-mascot__eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--color-accent);
+}
+
+.demo-mascot__title {
+  margin: 0 0 var(--space-3);
+  color: var(--color-fg);
+}
+
+.demo-mascot__lead {
+  margin: 0 0 var(--space-6);
+  color: var(--color-fg-muted);
+  font-size: var(--font-body-sm);
+  line-height: var(--leading-body);
+}
+
+.demo-mascot__welcome-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.demo-mascot__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--btn-h-lg);
+  padding: 0 var(--space-5);
+  border: var(--border-width) solid transparent;
+  font-family: var(--font-family-body);
+  font-size: var(--font-body-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.demo-mascot__btn--primary {
+  background: var(--color-fg);
+  color: var(--color-on-fg);
+}
+
+.demo-mascot__btn--primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.demo-mascot__btn--ghost {
+  background: transparent;
+  color: var(--color-fg);
+  border-color: var(--color-border-strong);
+}
+
+.demo-mascot__btn--ghost:hover {
+  border-color: var(--color-fg);
+}
+
+.demo-mascot__dismiss {
+  display: inline-block;
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-subtle);
+  font-family: var(--font-family-body);
+  font-size: var(--font-caption);
+  letter-spacing: var(--tracking-caption);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.demo-mascot__dismiss:hover {
+  color: var(--color-fg);
+}
+
+.demo-mascot__btn:focus-visible,
+.demo-mascot__dismiss:focus-visible,
+.demo-mascot__fab:focus-visible,
+.demo-mascot__tab:focus-visible,
+.demo-mascot__collapse:focus-visible,
+.demo-mascot__bubble:focus-visible,
+.demo-mascot__card-close:focus-visible,
+.demo-mascot__card-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ----- Dock (above back-to-top, right edge) ----- */
+.demo-mascot__dock {
+  position: fixed;
+  right: var(--grid-margin);
+  bottom: var(--demo-dock-bottom);
+  z-index: var(--z-float-mascot);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.demo-mascot--morph .demo-mascot__dock {
+  animation: demo-dock-arrive 520ms var(--ease-out) both;
+}
+
+.demo-mascot__launcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.demo-mascot__fab {
+  width: 3.25rem;
+  height: 3.25rem;
+  padding: 0;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-bg) 90%, var(--color-accent-muted));
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.demo-mascot__fab:hover,
+.demo-mascot--hover .demo-mascot__fab {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: var(--shadow-modal);
+}
+
+.demo-mascot__face {
+  width: 2.35rem;
+  height: 2.35rem;
+  display: block;
+}
+
+.demo-mascot__body {
+  fill: var(--color-fg);
+}
+
+.demo-mascot__eye {
+  fill: var(--color-accent-muted);
+  transform-origin: center;
+}
+
+.demo-mascot__mouth {
+  stroke: var(--color-accent);
+}
+
+.demo-mascot__cheek {
+  fill: var(--color-accent);
+  opacity: 0.35;
+}
+
+.demo-mascot:not(.demo-mascot--reduce) .demo-mascot__fab {
+  animation: demo-mascot-bob 3.2s var(--ease-out) infinite;
+}
+
+.demo-mascot:not(.demo-mascot--reduce) .demo-mascot__eye {
+  animation: demo-mascot-blink 5.5s var(--ease-out) infinite;
+}
+
+.demo-mascot--hover:not(.demo-mascot--reduce) .demo-mascot__fab {
+  animation: none;
+}
+
+.demo-mascot__collapse {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.demo-mascot__tab {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  padding: var(--space-3) var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-right: 0;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  background: var(--color-fg);
+  color: var(--color-on-fg);
+  font-family: var(--font-family-body);
+  font-size: var(--font-caption);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+
+.demo-mascot--collapsed .demo-mascot__dock {
+  right: 0;
+  bottom: var(--demo-dock-bottom);
+}
+
+/* ----- Toast bubble ----- */
+.demo-mascot__bubble {
+  max-width: 12.5rem;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-family-body);
+  font-size: var(--font-body-sm);
+  line-height: var(--leading-label);
+  text-align: left;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  position: relative;
+  animation: demo-toast-in var(--duration-slow) var(--ease-out) both;
+}
+
+.demo-mascot__bubble::after {
+  content: '';
+  position: absolute;
+  right: 1.1rem;
+  bottom: -0.4rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  background: var(--color-bg);
+  border-right: var(--border-width) solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
+  transform: rotate(45deg);
+}
+
+/* ----- Contact card ----- */
+.demo-mascot__card {
+  width: min(16.5rem, calc(100vw - 2 * var(--grid-margin)));
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--color-accent-muted) 40%, var(--color-bg)) 0%,
+      var(--color-bg) 55%
+    );
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: relative;
+  animation: demo-toast-in var(--duration-base) var(--ease-out) both;
+}
+
+.demo-mascot__card-close {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.demo-mascot__card-eyebrow {
+  margin: 0;
+  color: var(--color-accent);
+  padding-right: var(--space-6);
+}
+
+.demo-mascot__card-link {
+  color: var(--color-fg);
+  font-size: var(--font-body-sm);
+  word-break: break-all;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.demo-mascot__card-link--btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.demo-mascot__card-cta {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+  color: var(--color-accent-hover);
+  font-family: var(--font-family-display);
+  font-size: var(--font-body);
+  font-style: italic;
+}
+
+.demo-mascot__card-cta:hover {
+  color: var(--color-fg);
+}
+
+@keyframes demo-welcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes demo-dock-arrive {
+  from {
+    opacity: 0.4;
+    transform: translate(-20vw, -30vh) scale(1.6);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes demo-mascot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes demo-mascot-blink {
+  0%,
+  42%,
+  48%,
+  100% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes demo-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-mascot__welcome-card,
+  .demo-mascot--morph .demo-mascot__dock,
+  .demo-mascot__bubble,
+  .demo-mascot__card,
+  .demo-mascot__fab,
+  .demo-mascot__eye {
+    animation: none !important;
+  }
+
+  .demo-mascot__fab:hover,
+  .demo-mascot--hover .demo-mascot__fab {
+    transform: none;
+  }
+}

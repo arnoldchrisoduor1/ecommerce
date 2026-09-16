@@ -4,24 +4,46 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
-const NAV = [
-  { href: '/admin', label: 'Overview' },
-  { href: '/admin/products', label: 'Products' },
-  { href: '/admin/orders', label: 'Orders' },
-  { href: '/admin/discounts', label: 'Discounts' },
-  { href: '/admin/customers', label: 'Customers' },
-  { href: '/admin/saved-items', label: 'Saved items' },
-  { href: '/admin/reviews', label: 'Reviews' },
-  { href: '/admin/content/hero', label: 'Hero' },
-  { href: '/admin/content/announcement', label: 'Announcement' },
-  { href: '/admin/content/highlights', label: 'Highlights' },
-  { href: '/admin/content/shelves', label: 'Shelves' },
-  { href: '/admin/content/blog', label: 'Blog' },
-  { href: '/admin/content/stats', label: 'Stats' },
-  { href: '/admin/content/delivery', label: 'Delivery estimate' },
+const NAV_SECTIONS: { label: string; items: { href: string; label: string }[] }[] = [
+  {
+    label: 'Store',
+    items: [
+      { href: '/admin', label: 'Overview' },
+      { href: '/admin/products', label: 'Products' },
+      { href: '/admin/orders', label: 'Orders' },
+      { href: '/admin/discounts', label: 'Discounts' },
+    ],
+  },
+  {
+    label: 'People',
+    items: [
+      { href: '/admin/customers', label: 'Customers' },
+      { href: '/admin/activity', label: 'Activity' },
+      { href: '/admin/newsletter', label: 'Newsletter' },
+      { href: '/admin/saved-items', label: 'Saved items' },
+      { href: '/admin/reviews', label: 'Reviews' },
+    ],
+  },
+  {
+    label: 'Content',
+    items: [
+      { href: '/admin/content/hero', label: 'Hero' },
+      { href: '/admin/content/announcement', label: 'Announcement' },
+      { href: '/admin/content/highlights', label: 'Highlights' },
+      { href: '/admin/content/shelves', label: 'Shelves' },
+      { href: '/admin/content/blog', label: 'Blog' },
+      { href: '/admin/content/stats', label: 'Stats' },
+      { href: '/admin/content/delivery', label: 'Delivery estimate' },
+    ],
+  },
 ];
 
 const SIDEBAR_KEY = 'studio_admin_sidebar_open';
+
+function linkActive(path: string, href: string): boolean {
+  if (href === '/admin') return path === '/admin';
+  return path === href || path.startsWith(`${href}/`);
+}
 
 export function AdminShell({
   title,
@@ -73,18 +95,21 @@ export function AdminShell({
           </button>
         </div>
         <nav className="admin-sidebar__nav" aria-label="Admin">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`admin-sidebar__link ds-label${
-                path === item.href || path.startsWith(`${item.href}/`)
-                  ? ' admin-sidebar__link--active'
-                  : ''
-              }`}
-            >
-              {item.label}
-            </Link>
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label} className="admin-sidebar__section">
+              <p className="admin-sidebar__section-label ds-caption">{section.label}</p>
+              {section.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`admin-sidebar__link ds-label${
+                    linkActive(path, item.href) ? ' admin-sidebar__link--active' : ''
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
       </aside>

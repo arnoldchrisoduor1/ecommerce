@@ -48,6 +48,12 @@
   --color-surface: #ffffff;
   --color-scrim: rgba(10, 10, 10, 0.45);
 
+  /* ----- Footer (warm dark via existing tokens) ----- */
+  --color-footer-bg: var(--color-fg);
+  --color-footer-fg: var(--color-on-fg);
+  --color-footer-muted: var(--color-border-strong);
+  --color-footer-border: var(--color-fg-muted);
+
   /* ----- Brand (single accent) ----- */
   --color-primary: #0a0a0a;
   --color-primary-hover: #262626;
@@ -106,6 +112,7 @@
   --border-width: 1px;
   --border-width-strong: 2px;
   --shadow-none: none;
+  --shadow-card: 0 2px 12px rgba(10, 10, 10, 0.06);
   --shadow-modal: 0 16px 48px rgba(10, 10, 10, 0.12);
 
   /* ----- Opacity ----- */
@@ -121,9 +128,16 @@
   /* ----- Focus / layering ----- */
   --focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent);
   --z-modal: 50;
-  --z-float: 40; /* stylist launcher / persistent chrome */
   --z-drawer: 45;
+  /* Shared float stack (bottom chrome) — Task 9 / Task 17 */
+  --z-float: 40;
+  --z-float-back-top: 40; /* back-to-top (bottom-right) */
+  --z-float-stylist: 41; /* AI stylist FAB (bottom-left) */
+  --z-float-mascot: 42; /* demo mascot (Task 17) — above back-to-top */
+  --float-back-top-size: 2.75rem; /* 44px hit target */
+  --float-edge: var(--space-6);
   --presence-high-demand: 3; /* viewer count threshold for high-demand tag */
+  --presence-hide-below: 2; /* hide viewer badge when count below this */
   --drawer-width: 24rem;
   --free-delivery-threshold: 3000; /* KES — free delivery progress target */
 

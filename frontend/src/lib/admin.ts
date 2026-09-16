@@ -18,13 +18,30 @@ export function setAdminToken(token: string) {
 }
 
 export async function adminLogin(
-  email = 'admin@example.com',
-  password = 'change-me-in-production',
+  email?: string,
+  password?: string,
 ): Promise<void> {
+  // Prefer server-side session (uses ADMIN_* from container env).
+  if (!email && !password) {
+    const res = await fetch('/api/admin-session', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      throw new AdminApiError(res.status, 'Admin login failed');
+    }
+    const data = (await res.json()) as { token: string };
+    setAdminToken(data.token);
+    return;
+  }
+
   const res = await fetch('/api/admin/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email: email || 'admin@example.com',
+      password: password || 'change-me-in-production',
+    }),
   });
   if (!res.ok) {
     throw new AdminApiError(res.status, 'Admin login failed');

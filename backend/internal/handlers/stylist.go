@@ -31,6 +31,12 @@ func anthropicAPIKey() (string, error) {
 	return key, nil
 }
 
+// StylistStatus reports whether AI credentials are present (no secrets leaked).
+func (h *Handler) StylistStatus(c *fiber.Ctx) error {
+	_, err := anthropicAPIKey()
+	return c.JSON(fiber.Map{"configured": err == nil})
+}
+
 func anthropicModel() string {
 	if m := os.Getenv("ANTHROPIC_MODEL"); m != "" {
 		return m
@@ -234,6 +240,7 @@ func (h *Handler) SubmitStyleQuiz(c *fiber.Ctx) error {
 		if err != nil {
 			return internalError(c, "SubmitStyleQuiz images", err)
 		}
+		h.expandPrimaryImageMap(images)
 		for _, p := range products {
 			if img, ok := images[p.ID]; ok {
 				p.PrimaryImage = img

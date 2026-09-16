@@ -201,6 +201,18 @@ func (h *Handler) AddCartItem(c *fiber.Ctx) error {
 		return internalError(c, "AddCartItem touch cart", err)
 	}
 
+	if productID, err := h.productIDFromVariant(c.Context(), req.VariantID); err == nil {
+		var customerID *string
+		_ = h.db.QueryRow(c.Context(), `SELECT customer_id FROM carts WHERE id = $1`, cartID).Scan(&customerID)
+		var price float64
+		_ = h.db.QueryRow(c.Context(), `
+			SELECT COALESCE(pv.price_override, p.sale_price, p.base_price)::float8
+			FROM product_variants pv
+			JOIN products p ON p.id = pv.product_id
+			WHERE pv.id = $1`, req.VariantID).Scan(&price)
+		h.emitActivity("cart_add", customerID, &productID, nil, &price)
+	}
+
 	cart, err := h.loadCart(c, cartID)
 	if err != nil {
 		return internalError(c, "AddCartItem load", err)

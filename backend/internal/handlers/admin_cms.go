@@ -56,6 +56,7 @@ func (h *Handler) AdminUpdateContentBlock(c *fiber.Ctx) error {
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
+	req.Data = h.normalizeContentBlockData(req.Data)
 
 	var block contentBlockResponse
 	err := h.db.QueryRow(c.Context(), `
@@ -67,6 +68,7 @@ func (h *Handler) AdminUpdateContentBlock(c *fiber.Ctx) error {
 	if err != nil {
 		return internalError(c, "AdminUpdateContentBlock upsert", err)
 	}
+	block.Data = h.rewriteContentBlockData(block.Data)
 	return c.JSON(block)
 }
 
@@ -80,12 +82,19 @@ func (h *Handler) AdminListHighlights(c *fiber.Ctx) error {
 	defer rows.Close()
 
 	items := make([]highlightItem, 0)
+	ids := make([]string, 0)
 	for rows.Next() {
 		var item highlightItem
 		if err := rows.Scan(&item.ID, &item.Title, &item.MediaURL, &item.LinkURL, &item.Position); err != nil {
 			return internalError(c, "AdminListHighlights scan", err)
 		}
+		item.MediaURL = h.expandMedia(item.MediaURL)
+		item.Slides = []highlightSlideItem{}
 		items = append(items, item)
+		ids = append(ids, item.ID)
+	}
+	if err := h.attachHighlightSlides(c, items, ids); err != nil {
+		return internalError(c, "AdminListHighlights slides", err)
 	}
 	return c.JSON(fiber.Map{"highlights": items})
 }
@@ -98,13 +107,20 @@ func (h *Handler) AdminCreateHighlight(c *fiber.Ctx) error {
 	if req.Title == "" || req.MediaURL == "" {
 		return badRequest(c, "title and media_url are required")
 	}
+	req.MediaURL = h.normalizeMedia(req.MediaURL)
 	isActive := true
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
 
+	tx, err := h.db.Begin(c.Context())
+	if err != nil {
+		return internalError(c, "AdminCreateHighlight begin", err)
+	}
+	defer tx.Rollback(c.Context())
+
 	var id string
-	err := h.db.QueryRow(c.Context(), `
+	err = tx.QueryRow(c.Context(), `
 		INSERT INTO highlights (title, media_url, link_url, position, is_active)
 		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 		req.Title, req.MediaURL, req.LinkURL, req.Position, isActive,
@@ -112,11 +128,17 @@ func (h *Handler) AdminCreateHighlight(c *fiber.Ctx) error {
 	if err != nil {
 		return internalError(c, "AdminCreateHighlight insert", err)
 	}
+	_, err = tx.Exec(c.Context(), `
+		INSERT INTO highlight_slides (highlight_id, image_url, caption, caption_position, sort_order)
+		VALUES ($1, $2, '', 'bottom', 0)`, id, req.MediaURL)
+	if err != nil {
+		return internalError(c, "AdminCreateHighlight slide", err)
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return internalError(c, "AdminCreateHighlight commit", err)
+	}
 
-	var item highlightItem
-	err = h.db.QueryRow(c.Context(), `
-		SELECT id, title, media_url, link_url, position FROM highlights WHERE id = $1`, id,
-	).Scan(&item.ID, &item.Title, &item.MediaURL, &item.LinkURL, &item.Position)
+	item, err := h.loadHighlightItem(c, id)
 	if err != nil {
 		return internalError(c, "AdminCreateHighlight load", err)
 	}
@@ -133,6 +155,7 @@ func (h *Handler) AdminUpdateHighlight(c *fiber.Ctx) error {
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
+	req.MediaURL = h.normalizeMedia(req.MediaURL)
 
 	tag, err := h.db.Exec(c.Context(), `
 		UPDATE highlights SET title = $1, media_url = $2, link_url = $3, position = $4, is_active = $5
@@ -144,14 +167,201 @@ func (h *Handler) AdminUpdateHighlight(c *fiber.Ctx) error {
 		return notFound(c, "highlight not found")
 	}
 
-	var item highlightItem
-	err = h.db.QueryRow(c.Context(), `
-		SELECT id, title, media_url, link_url, position FROM highlights WHERE id = $1`, id,
-	).Scan(&item.ID, &item.Title, &item.MediaURL, &item.LinkURL, &item.Position)
+	// Keep primary media_url mirrored onto first slide when present.
+	if req.MediaURL != "" {
+		_, _ = h.db.Exec(c.Context(), `
+			UPDATE highlight_slides SET image_url = $1
+			WHERE id = (
+				SELECT id FROM highlight_slides
+				WHERE highlight_id = $2
+				ORDER BY sort_order, id
+				LIMIT 1
+			)`, req.MediaURL, id)
+	}
+
+	item, err := h.loadHighlightItem(c, id)
 	if err != nil {
 		return internalError(c, "AdminUpdateHighlight load", err)
 	}
 	return c.JSON(item)
+}
+
+func (h *Handler) loadHighlightItem(c *fiber.Ctx, id string) (highlightItem, error) {
+	var item highlightItem
+	err := h.db.QueryRow(c.Context(), `
+		SELECT id, title, media_url, link_url, position FROM highlights WHERE id = $1`, id,
+	).Scan(&item.ID, &item.Title, &item.MediaURL, &item.LinkURL, &item.Position)
+	if err != nil {
+		return item, err
+	}
+	item.MediaURL = h.expandMedia(item.MediaURL)
+	item.Slides = []highlightSlideItem{}
+	items := []highlightItem{item}
+	if err := h.attachHighlightSlides(c, items, []string{id}); err != nil {
+		return item, err
+	}
+	return items[0], nil
+}
+
+type adminHighlightSlideInput struct {
+	ImageURL        string `json:"image_url"`
+	Caption         string `json:"caption"`
+	CaptionPosition string `json:"caption_position"`
+	SortOrder       *int   `json:"sort_order"`
+}
+
+type adminHighlightSlidesReorderInput struct {
+	SlideIDs []string `json:"slide_ids"`
+}
+
+func (h *Handler) AdminCreateHighlightSlide(c *fiber.Ctx) error {
+	highlightID := c.Params("id")
+	var req adminHighlightSlideInput
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+	if strings.TrimSpace(req.ImageURL) == "" {
+		return badRequest(c, "image_url is required")
+	}
+	req.ImageURL = h.normalizeMedia(req.ImageURL)
+	pos := normalizeCaptionPosition(req.CaptionPosition)
+
+	var exists bool
+	if err := h.db.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM highlights WHERE id = $1)`, highlightID).Scan(&exists); err != nil {
+		return internalError(c, "AdminCreateHighlightSlide exists", err)
+	}
+	if !exists {
+		return notFound(c, "highlight not found")
+	}
+
+	sortOrder := 0
+	if req.SortOrder != nil {
+		sortOrder = *req.SortOrder
+	} else {
+		_ = h.db.QueryRow(c.Context(), `
+			SELECT COALESCE(MAX(sort_order), -1) + 1 FROM highlight_slides WHERE highlight_id = $1`, highlightID,
+		).Scan(&sortOrder)
+	}
+
+	var slide highlightSlideItem
+	err := h.db.QueryRow(c.Context(), `
+		INSERT INTO highlight_slides (highlight_id, image_url, caption, caption_position, sort_order)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, image_url, caption, caption_position, sort_order`,
+		highlightID, req.ImageURL, req.Caption, pos, sortOrder,
+	).Scan(&slide.ID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder)
+	if err != nil {
+		return internalError(c, "AdminCreateHighlightSlide insert", err)
+	}
+	slide.ImageURL = h.expandMedia(slide.ImageURL)
+	_ = h.syncHighlightPrimaryMedia(c, highlightID)
+	return c.Status(fiber.StatusCreated).JSON(slide)
+}
+
+func (h *Handler) AdminUpdateHighlightSlide(c *fiber.Ctx) error {
+	highlightID := c.Params("id")
+	slideID := c.Params("slideId")
+	var req adminHighlightSlideInput
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+	if strings.TrimSpace(req.ImageURL) == "" {
+		return badRequest(c, "image_url is required")
+	}
+	req.ImageURL = h.normalizeMedia(req.ImageURL)
+	pos := normalizeCaptionPosition(req.CaptionPosition)
+	tag, err := h.db.Exec(c.Context(), `
+		UPDATE highlight_slides
+		SET image_url = $1,
+		    caption = $2,
+		    caption_position = $3,
+		    sort_order = CASE WHEN $4::int IS NULL THEN sort_order ELSE $4::int END
+		WHERE id = $5 AND highlight_id = $6`,
+		req.ImageURL, req.Caption, pos, req.SortOrder, slideID, highlightID)
+	if err != nil {
+		return internalError(c, "AdminUpdateHighlightSlide update", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return notFound(c, "slide not found")
+	}
+
+	var slide highlightSlideItem
+	err = h.db.QueryRow(c.Context(), `
+		SELECT id, image_url, caption, caption_position, sort_order
+		FROM highlight_slides WHERE id = $1`, slideID,
+	).Scan(&slide.ID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder)
+	if err != nil {
+		return internalError(c, "AdminUpdateHighlightSlide load", err)
+	}
+	slide.ImageURL = h.expandMedia(slide.ImageURL)
+	_ = h.syncHighlightPrimaryMedia(c, highlightID)
+	return c.JSON(slide)
+}
+
+func (h *Handler) AdminDeleteHighlightSlide(c *fiber.Ctx) error {
+	highlightID := c.Params("id")
+	slideID := c.Params("slideId")
+	tag, err := h.db.Exec(c.Context(), `
+		DELETE FROM highlight_slides WHERE id = $1 AND highlight_id = $2`, slideID, highlightID)
+	if err != nil {
+		return internalError(c, "AdminDeleteHighlightSlide delete", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return notFound(c, "slide not found")
+	}
+	_ = h.syncHighlightPrimaryMedia(c, highlightID)
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handler) AdminReorderHighlightSlides(c *fiber.Ctx) error {
+	highlightID := c.Params("id")
+	var req adminHighlightSlidesReorderInput
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+	if len(req.SlideIDs) == 0 {
+		return badRequest(c, "slide_ids required")
+	}
+	tx, err := h.db.Begin(c.Context())
+	if err != nil {
+		return internalError(c, "AdminReorderHighlightSlides begin", err)
+	}
+	defer tx.Rollback(c.Context())
+
+	for i, sid := range req.SlideIDs {
+		tag, err := tx.Exec(c.Context(), `
+			UPDATE highlight_slides SET sort_order = $1
+			WHERE id = $2 AND highlight_id = $3`, i, sid, highlightID)
+		if err != nil {
+			return internalError(c, "AdminReorderHighlightSlides update", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return badRequest(c, "invalid slide_id")
+		}
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return internalError(c, "AdminReorderHighlightSlides commit", err)
+	}
+	_ = h.syncHighlightPrimaryMedia(c, highlightID)
+	item, err := h.loadHighlightItem(c, highlightID)
+	if err != nil {
+		return internalError(c, "AdminReorderHighlightSlides load", err)
+	}
+	return c.JSON(item)
+}
+
+func (h *Handler) syncHighlightPrimaryMedia(c *fiber.Ctx, highlightID string) error {
+	var imageURL string
+	err := h.db.QueryRow(c.Context(), `
+		SELECT image_url FROM highlight_slides
+		WHERE highlight_id = $1
+		ORDER BY sort_order, id
+		LIMIT 1`, highlightID).Scan(&imageURL)
+	if err != nil {
+		return err
+	}
+	_, err = h.db.Exec(c.Context(), `UPDATE highlights SET media_url = $1 WHERE id = $2`, imageURL, highlightID)
+	return err
 }
 
 func (h *Handler) AdminDeleteHighlight(c *fiber.Ctx) error {
@@ -254,6 +464,7 @@ func (h *Handler) AdminListBlogPosts(c *fiber.Ctx) error {
 		if err := rows.Scan(&p.ID, &p.Title, &p.Slug, &p.Body, &p.CoverImage, &p.Status, &p.PublishedAt); err != nil {
 			return internalError(c, "AdminListBlogPosts scan", err)
 		}
+		p.CoverImage = h.expandMediaPtr(p.CoverImage)
 		posts = append(posts, p)
 	}
 	return c.JSON(fiber.Map{"posts": posts})
@@ -280,6 +491,7 @@ func (h *Handler) AdminCreateBlogPost(c *fiber.Ctx) error {
 		now := time.Now().UTC()
 		publishedAt = &now
 	}
+	req.CoverImage = h.normalizeMediaPtr(req.CoverImage)
 
 	var id string
 	err := h.db.QueryRow(c.Context(), `
@@ -313,6 +525,7 @@ func (h *Handler) adminGetBlogPostByID(c *fiber.Ctx, id string) error {
 	if err != nil {
 		return internalError(c, "adminGetBlogPostByID query", err)
 	}
+	p.CoverImage = h.expandMediaPtr(p.CoverImage)
 	return c.JSON(p)
 }
 
@@ -326,6 +539,7 @@ func (h *Handler) AdminUpdateBlogPost(c *fiber.Ctx) error {
 	if status != "" && status != "draft" && status != "published" {
 		return badRequest(c, "invalid status")
 	}
+	req.CoverImage = h.normalizeMediaPtr(req.CoverImage)
 
 	tag, err := h.db.Exec(c.Context(), `
 		UPDATE blog_posts SET

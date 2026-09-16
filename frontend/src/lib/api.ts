@@ -142,6 +142,14 @@ export type ContentBlock<T> = {
   updated_at: string;
 };
 
+export type HeroSlide = {
+  url: string;
+  /** Horizontal focal point 0–1 (default 0.5). */
+  focal_x?: number;
+  /** Vertical focal point 0–1 (default 0.5). */
+  focal_y?: number;
+};
+
 export type HeroData = {
   headline?: string;
   subheadline?: string;
@@ -149,14 +157,40 @@ export type HeroData = {
   cta_url?: string;
   /** Legacy single image; still supported as fallback. */
   media_url?: string;
-  /** Ordered hero slides; when set, these take precedence over media_url. */
+  /** Legacy URL list; still supported when `slides` is absent. */
   media_urls?: string[];
+  /** Preferred slide list with optional focal points. */
+  slides?: HeroSlide[];
   /** Slide dwell time in ms (default 5500). */
   media_interval_ms?: number;
 };
 
+function clampFocal(n: unknown, fallback = 0.5): number {
+  const v = typeof n === 'number' ? n : Number(n);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.min(1, Math.max(0, v));
+}
+
+/** Normalize hero media into slides with focal points. */
+export function heroSlides(hero: HeroData): HeroSlide[] {
+  if (Array.isArray(hero.slides) && hero.slides.length) {
+    return hero.slides
+      .map((s) => ({
+        url: (s?.url || '').trim(),
+        focal_x: clampFocal(s?.focal_x),
+        focal_y: clampFocal(s?.focal_y),
+      }))
+      .filter((s) => s.url);
+  }
+  const urls = heroMediaUrls(hero);
+  return urls.map((url) => ({ url, focal_x: 0.5, focal_y: 0.5 }));
+}
+
 /** Resolve ordered hero slide URLs from CMS block data. */
 export function heroMediaUrls(hero: HeroData): string[] {
+  if (Array.isArray(hero.slides) && hero.slides.length) {
+    return hero.slides.map((s) => (s?.url || '').trim()).filter(Boolean);
+  }
   const multi = (hero.media_urls || []).map((u) => u.trim()).filter(Boolean);
   if (multi.length) return multi;
   if (hero.media_url?.trim()) return [hero.media_url.trim()];
@@ -167,12 +201,21 @@ export type AnnouncementData = {
   messages?: string[];
 };
 
+export type HighlightSlide = {
+  id: string;
+  image_url: string;
+  caption: string;
+  caption_position: 'top' | 'centre' | 'bottom' | string;
+  sort_order: number;
+};
+
 export type Highlight = {
   id: string;
   title: string;
   media_url: string;
   link_url?: string | null;
   position: number;
+  slides?: HighlightSlide[];
 };
 
 export type ProductImage = {
@@ -215,6 +258,8 @@ export type BlogPost = {
   slug: string;
   cover_image?: string | null;
   published_at?: string | null;
+  total_reads?: number;
+  currently_reading?: number;
 };
 
 export type StatsCounter = {

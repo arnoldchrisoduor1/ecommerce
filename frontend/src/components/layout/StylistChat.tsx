@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { useCart } from '@/components/cart/CartProvider';
 import { apiGet, type ProductDetail, type ProductListItem } from '@/lib/api';
 import { formatKes } from '@/lib/format';
 import {
+  fetchStylistStatus,
   slugsInText,
   streamStylistChat,
   submitStyleQuiz,
@@ -161,7 +162,11 @@ export function StyleQuizFlow({ onDone }: { onDone?: () => void }) {
   );
 }
 
-export function StylistChatPanel() {
+export function StylistChatPanel({
+  configured,
+}: {
+  configured: boolean | null;
+}) {
   const { addToCart } = useCart();
   const [mode, setMode] = useState<'chat' | 'quiz'>('chat');
   const [input, setInput] = useState('');
@@ -169,8 +174,10 @@ export function StylistChatPanel() {
   const [busy, setBusy] = useState(false);
   const [slugCatalog, setSlugCatalog] = useState<SlugMeta[]>([]);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const chatDisabled = configured === false || busy;
 
   useEffect(() => {
+    if (configured !== true) return;
     void apiGet<{ products: ProductListItem[] }>(
       '/catalog/products?sort=latest&page_size=40',
     ).then(async (res) => {
@@ -187,7 +194,7 @@ export function StylistChatPanel() {
       }
       setSlugCatalog(metas);
     });
-  }, []);
+  }, [configured]);
 
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
@@ -202,7 +209,7 @@ export function StylistChatPanel() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || chatDisabled || configured !== true) return;
     setInput('');
     const userId = crypto.randomUUID();
     setMessages((m) => [...m, { id: userId, role: 'user', text }]);
@@ -271,12 +278,13 @@ export function StylistChatPanel() {
           className={`stylist__tab ds-label${mode === 'quiz' ? ' stylist__tab--active' : ''}`}
           data-testid="style-quiz-tab"
           onClick={() => setMode('quiz')}
+          disabled={configured === false}
         >
           Style quiz
         </button>
       </div>
 
-      {mode === 'quiz' ? (
+      {mode === 'quiz' && configured !== false ? (
         <StyleQuizFlow onDone={() => setMode('chat')} />
       ) : (
         <>
@@ -286,7 +294,19 @@ export function StylistChatPanel() {
             aria-live="polite"
             data-testid="stylist-chat-messages"
           >
-            {messages.length === 0 ? (
+            {configured === false ? (
+              <div className="stylist-warmup" data-testid="stylist-unconfigured">
+                <div className="stylist-warmup__icon" aria-hidden="true">
+                  <StylistSparkIcon />
+                </div>
+                <h3 className="ds-display ds-display--sm stylist-warmup__title">
+                  AI Stylist is warming up
+                </h3>
+                <p className="ds-body stylist-warmup__body">
+                  AI credentials not provided — this feature will be available shortly.
+                </p>
+              </div>
+            ) : messages.length === 0 ? (
               <p className="ds-body--sm">Ask for fit, fabric, or outfit ideas.</p>
             ) : (
               messages.map((m) => (
@@ -336,15 +356,20 @@ export function StylistChatPanel() {
               className="stylist__input ds-body--sm"
               value={input}
               onChange={(ev) => setInput(ev.target.value)}
-              placeholder="What are you looking for?"
-              disabled={busy}
+              placeholder={
+                configured === false
+                  ? 'Chat unavailable until stylist is ready'
+                  : 'What are you looking for?'
+              }
+              disabled={chatDisabled || configured === null}
+              aria-disabled={chatDisabled || configured === null}
               data-testid="stylist-chat-input"
             />
             <Button
               type="submit"
               size="md"
               variant="primary"
-              disabled={busy}
+              disabled={chatDisabled || configured !== true}
               data-testid="stylist-chat-send"
             >
               Send
@@ -358,32 +383,108 @@ export function StylistChatPanel() {
 
 export function StylistChat() {
   const [open, setOpen] = useState(false);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+
+  const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setConfigured(null);
+    void fetchStylistStatus()
+      .then((s) => {
+        if (!cancelled) setConfigured(s.configured);
+      })
+      .catch(() => {
+        if (!cancelled) setConfigured(false);
+      });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const t = window.setTimeout(() => closeBtnRef.current?.focus(), 0);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+      window.clearTimeout(t);
+    };
+  }, [open, close]);
 
   return (
     <div className="stylist">
       <button
         type="button"
-        className="stylist__launcher ds-btn ds-btn--accent ds-btn--lg"
+        className="stylist__fab"
         data-testid="stylist-chat-launcher"
         aria-expanded={open}
+        aria-haspopup="dialog"
         aria-controls="stylist-chat-panel"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
       >
-        {open ? 'Close' : 'Stylist'}
+        <span className="stylist__fab-icon" aria-hidden="true">
+          <StylistSparkIcon />
+        </span>
+        <span className="stylist__fab-label ds-label">Stylist</span>
       </button>
 
       {open ? (
         <div
-          id="stylist-chat-panel"
-          className="stylist__panel"
-          data-testid="stylist-chat-panel"
-          role="dialog"
-          aria-label="AI stylist chat"
+          className="stylist-modal"
+          role="presentation"
+          data-testid="stylist-modal-root"
         >
-          <p className="ds-label stylist__eyebrow">Shop with stylist</p>
-          <StylistChatPanel />
+          <button
+            type="button"
+            className="stylist-modal__scrim"
+            aria-label="Close stylist"
+            data-testid="stylist-modal-backdrop"
+            onClick={close}
+          />
+          <div
+            id="stylist-chat-panel"
+            className="stylist__panel"
+            data-testid="stylist-chat-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI stylist chat"
+          >
+            <button
+              ref={closeBtnRef}
+              type="button"
+              className="stylist__close"
+              aria-label="Close"
+              data-testid="stylist-modal-close"
+              onClick={close}
+            >
+              <CloseIcon />
+            </button>
+            <p className="ds-label stylist__eyebrow">Shop with stylist</p>
+            <StylistChatPanel configured={configured} />
+          </div>
         </div>
       ) : null}
     </div>
+  );
+}
+
+function StylistSparkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" strokeLinecap="round" />
+      <path d="M6.2 6.2l2.1 2.1M15.7 15.7l2.1 2.1M17.8 6.2l-2.1 2.1M8.3 15.7l-2.1 2.1" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="3.25" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+    </svg>
   );
 }

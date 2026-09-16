@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { useAdminUi } from '@/components/admin/AdminUiProvider';
+import { AdminStatusPill } from '@/components/admin/AdminStatusPill';
 import { adminGet, adminSend, adminUpload } from '@/lib/admin';
 import { apiGet, type ContentBlock, type HeroData, parseBlockData } from '@/lib/api';
 import { Button } from '@/components/ui';
@@ -120,12 +121,21 @@ export function AdminAnnouncementEditorClient() {
   );
 }
 
+type HighlightSlide = {
+  id: string;
+  image_url: string;
+  caption: string;
+  caption_position: string;
+  sort_order: number;
+};
+
 type Highlight = {
   id: string;
   title: string;
   media_url: string;
   link_url?: string | null;
   position: number;
+  slides?: HighlightSlide[];
 };
 
 export function AdminHighlightsClient() {
@@ -150,8 +160,8 @@ export function AdminHighlightsClient() {
     const form = new FormData();
     form.append('file', file);
     form.append('folder', folder);
-    const res = await adminUpload<{ url: string }>('/content/media', form);
-    return res.url;
+    const res = await adminUpload<{ url: string; object_key: string }>('/content/media', form);
+    return res.url || res.object_key;
   }
 
   async function saveHighlight(h: Highlight) {
@@ -159,7 +169,7 @@ export function AdminHighlightsClient() {
     try {
       await adminSend(`/content/highlights/${h.id}`, 'PUT', {
         title: h.title,
-        media_url: h.media_url,
+        media_url: h.media_url || h.slides?.[0]?.image_url || '',
         link_url: h.link_url || null,
         position: h.position,
         is_active: true,
@@ -168,29 +178,6 @@ export function AdminHighlightsClient() {
       await reload();
     } catch {
       toast('Could not save highlight');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onReplaceImage(h: Highlight, files: FileList | null) {
-    if (!files?.length) return;
-    setBusy(true);
-    try {
-      const url = await uploadMedia(files[0]);
-      const next = { ...h, media_url: url };
-      setItems((prev) => prev.map((item) => (item.id === h.id ? next : item)));
-      await adminSend(`/content/highlights/${h.id}`, 'PUT', {
-        title: next.title,
-        media_url: next.media_url,
-        link_url: next.link_url || null,
-        position: next.position,
-        is_active: true,
-      });
-      toast('Image updated', 'content-saved-toast');
-      await reload();
-    } catch {
-      toast('Upload failed');
     } finally {
       setBusy(false);
     }
@@ -284,6 +271,88 @@ export function AdminHighlightsClient() {
     setItems((prev) => prev.map((h) => (h.id === id ? { ...h, ...patch } : h)));
   }
 
+  function updateSlideLocal(highlightId: string, slideId: string, patch: Partial<HighlightSlide>) {
+    setItems((prev) =>
+      prev.map((h) => {
+        if (h.id !== highlightId) return h;
+        return {
+          ...h,
+          slides: (h.slides || []).map((s) => (s.id === slideId ? { ...s, ...patch } : s)),
+        };
+      }),
+    );
+  }
+
+  async function addSlide(h: Highlight, files: FileList | null) {
+    if (!files?.length) return;
+    setBusy(true);
+    try {
+      const url = await uploadMedia(files[0]);
+      await adminSend(`/content/highlights/${h.id}/slides`, 'POST', {
+        image_url: url,
+        caption: '',
+        caption_position: 'bottom',
+      });
+      toast('Slide added', 'content-saved-toast');
+      await reload();
+    } catch {
+      toast('Could not add slide');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSlide(h: Highlight, s: HighlightSlide) {
+    setBusy(true);
+    try {
+      await adminSend(`/content/highlights/${h.id}/slides/${s.id}`, 'PUT', {
+        image_url: s.image_url,
+        caption: s.caption,
+        caption_position: s.caption_position,
+        sort_order: s.sort_order,
+      });
+      toast('Slide saved', 'content-saved-toast');
+      await reload();
+    } catch {
+      toast('Could not save slide');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeSlide(h: Highlight, slideId: string) {
+    setBusy(true);
+    try {
+      await adminSend(`/content/highlights/${h.id}/slides/${slideId}`, 'DELETE');
+      toast('Slide removed');
+      await reload();
+    } catch {
+      toast('Could not remove slide');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveSlide(h: Highlight, slideId: string, dir: -1 | 1) {
+    const slides = [...(h.slides || [])].sort((a, b) => a.sort_order - b.sort_order);
+    const idx = slides.findIndex((s) => s.id === slideId);
+    const swap = slides[idx + dir];
+    if (!swap) return;
+    const next = [...slides];
+    [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]];
+    setBusy(true);
+    try {
+      await adminSend(`/content/highlights/${h.id}/slides/reorder`, 'PUT', {
+        slide_ids: next.map((s) => s.id),
+      });
+      await reload();
+    } catch {
+      toast('Could not reorder slides');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AdminShell title="Highlights">
       <ul className="admin-hero-slides">
@@ -295,7 +364,7 @@ export function AdminHighlightsClient() {
             ) : (
               <span className="admin-hero-slide__img admin-product-thumb--empty" />
             )}
-            <div className="admin-cell-stack" style={{ gap: 'var(--space-2)' }}>
+            <div className="admin-cell-stack" style={{ gap: 'var(--space-2)', flex: 1 }}>
               <label className="admin-field">
                 <span className="ds-label">Title</span>
                 <input
@@ -313,19 +382,6 @@ export function AdminHighlightsClient() {
                   disabled={busy}
                   onChange={(e) => updateLocal(h.id, { link_url: e.target.value })}
                   placeholder="/shop"
-                />
-              </label>
-              <label className="admin-field">
-                <span className="ds-label">Replace image</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={busy}
-                  data-testid="highlight-image-upload"
-                  onChange={(e) => {
-                    void onReplaceImage(h, e.target.files);
-                    e.target.value = '';
-                  }}
                 />
               </label>
               <div className="admin-hero-slide__actions">
@@ -365,6 +421,95 @@ export function AdminHighlightsClient() {
                 >
                   Remove
                 </Button>
+              </div>
+
+              <div className="admin-highlight-slides" data-testid="highlight-slides">
+                <p className="ds-label">Slides</p>
+                {(h.slides || []).map((s) => (
+                  <div key={s.id} className="admin-highlight-slide" data-testid="highlight-slide-row">
+                    {s.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={s.image_url} alt="" className="admin-hero-slide__img" />
+                    ) : null}
+                    <label className="admin-field">
+                      <span className="ds-label">Caption</span>
+                      <input
+                        className="admin-input"
+                        value={s.caption}
+                        disabled={busy}
+                        onChange={(e) =>
+                          updateSlideLocal(h.id, s.id, { caption: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="admin-field">
+                      <span className="ds-label">Caption position</span>
+                      <select
+                        className="admin-input"
+                        value={s.caption_position || 'bottom'}
+                        disabled={busy}
+                        onChange={(e) =>
+                          updateSlideLocal(h.id, s.id, { caption_position: e.target.value })
+                        }
+                      >
+                        <option value="top">Top</option>
+                        <option value="centre">Centre</option>
+                        <option value="bottom">Bottom</option>
+                      </select>
+                    </label>
+                    <div className="admin-hero-slide__actions">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void saveSlide(h, s)}
+                      >
+                        Save slide
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void moveSlide(h, s.id, -1)}
+                      >
+                        Up
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void moveSlide(h, s.id, 1)}
+                      >
+                        Down
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        disabled={busy || (h.slides || []).length <= 1}
+                        onClick={() => void removeSlide(h, s.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                <label className="admin-field">
+                  <span className="ds-label">Add slide image</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={busy}
+                    data-testid="highlight-slide-upload"
+                    onChange={(e) => {
+                      void addSlide(h, e.target.files);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
               </div>
             </div>
           </li>
@@ -444,11 +589,37 @@ export function AdminBlogClient() {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyPost);
+  const [coverPreview, setCoverPreview] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [from, setFrom] = useState(() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [sort, setSort] = useState('reads');
+  const [analytics, setAnalytics] = useState<
+    {
+      post_id: string;
+      title: string;
+      slug: string;
+      total_reads: number;
+      unique_readers: number;
+      currently_reading: number;
+      avg_seconds: number;
+      completion_rate: number;
+    }[]
+  >([]);
 
   async function refresh() {
     const r = await adminGet<{ posts: BlogPost[] }>('/blog');
     setPosts(r.posts);
+  }
+
+  async function refreshAnalytics() {
+    const q = new URLSearchParams({ from, to, sort });
+    const r = await adminGet<{ posts: typeof analytics }>(`/analytics/blog-reads?${q}`);
+    setAnalytics(r.posts ?? []);
   }
 
   useEffect(() => {
@@ -456,9 +627,15 @@ export function AdminBlogClient() {
     void refresh();
   }, [ready]);
 
+  useEffect(() => {
+    if (!ready) return;
+    void refreshAnalytics().catch(() => setAnalytics([]));
+  }, [ready, from, to, sort]);
+
   function startCreate() {
     setEditingId(null);
     setForm(emptyPost);
+    setCoverPreview('');
   }
 
   function startEdit(p: BlogPost) {
@@ -470,6 +647,25 @@ export function AdminBlogClient() {
       cover_image: p.cover_image || '',
       status: p.status || 'draft',
     });
+    setCoverPreview(p.cover_image || '');
+  }
+
+  async function onCoverUpload(files: FileList | null) {
+    if (!files?.length) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', files[0]);
+      fd.append('folder', 'cms/blog');
+      const res = await adminUpload<{ url: string; object_key: string }>('/content/media', fd);
+      setForm((f) => ({ ...f, cover_image: res.object_key || res.url }));
+      setCoverPreview(res.url);
+      toast('Cover uploaded', 'content-saved-toast');
+    } catch {
+      toast('Upload failed');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -518,6 +714,65 @@ export function AdminBlogClient() {
 
   return (
     <AdminShell title="Style guide / Blog">
+      <section className="admin-panel" data-testid="blog-analytics-panel">
+        <div className="admin-panel__head">
+          <h2 className="ds-display ds-display--sm">Blog analytics</h2>
+          <div className="admin-date-range">
+            <input
+              className="admin-input"
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              aria-label="From"
+            />
+            <input
+              className="admin-input"
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              aria-label="To"
+            />
+            <select
+              className="admin-input"
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              aria-label="Sort"
+            >
+              <option value="reads">Total reads</option>
+              <option value="unique">Unique</option>
+              <option value="reading">Reading now</option>
+              <option value="avg_time">Avg time</option>
+              <option value="completion">Completion</option>
+              <option value="title">Title</option>
+            </select>
+          </div>
+        </div>
+        <table className="admin-table" data-testid="blog-analytics-table">
+          <thead>
+            <tr>
+              <th>Post</th>
+              <th>Reads</th>
+              <th>Unique</th>
+              <th>Reading</th>
+              <th>Avg time</th>
+              <th>Completion</th>
+            </tr>
+          </thead>
+          <tbody>
+            {analytics.map((r) => (
+              <tr key={r.post_id} data-testid="blog-analytics-row">
+                <td>{r.title}</td>
+                <td>{r.total_reads}</td>
+                <td>{r.unique_readers}</td>
+                <td>{r.currently_reading}</td>
+                <td>{Math.round(r.avg_seconds)}s</td>
+                <td>{Math.round(r.completion_rate)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
       <form className="admin-form" onSubmit={(e) => void onSubmit(e)}>
         <p className="ds-caption">
           {editingId ? 'Editing post' : 'New post'} — shown on the landing Style guide section when published.
@@ -540,15 +795,24 @@ export function AdminBlogClient() {
             required
           />
         </label>
-        <label className="admin-field">
-          <span className="ds-label">Cover image URL</span>
+        <div className="admin-field">
+          <span className="ds-label">Cover image</span>
           <input
-            className="admin-input"
-            value={form.cover_image}
-            onChange={(e) => setForm((f) => ({ ...f, cover_image: e.target.value }))}
-            placeholder="http://localhost:9000/ecommerce/cms/..."
+            type="file"
+            accept="image/*"
+            disabled={busy}
+            onChange={(e) => { void onCoverUpload(e.target.files); e.target.value = ''; }}
           />
-        </label>
+          {coverPreview ? (
+            <img
+              src={coverPreview}
+              alt="Cover preview"
+              style={{ marginTop: 8, maxHeight: 120, borderRadius: 4, objectFit: 'cover' }}
+            />
+          ) : form.cover_image ? (
+            <p className="ds-caption" style={{ marginTop: 4 }}>Stored: {form.cover_image}</p>
+          ) : null}
+        </div>
         <label className="admin-field">
           <span className="ds-label">Body</span>
           <textarea
@@ -593,7 +857,9 @@ export function AdminBlogClient() {
           {posts.map((p) => (
             <tr key={p.id}>
               <td>{p.title}</td>
-              <td>{p.status}</td>
+              <td>
+                <AdminStatusPill status={p.status} />
+              </td>
               <td>
                 <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(p)}>
                   Edit

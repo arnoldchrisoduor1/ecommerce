@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
+  <rect width="720" height="1280" fill="#0a0a0a"/>
+  <rect x="80" y="200" width="560" height="880" fill="#262626"/>
+  <circle cx="360" cy="480" r="90" fill="#52525b"/>
+  <text x="360" y="700" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="36" fill="#f4f4f5">Dark slide</text>
+</svg>

@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { useAdminUi } from '@/components/admin/AdminUiProvider';
 import { adminSend, adminUpload } from '@/lib/admin';
@@ -8,10 +8,15 @@ import {
   apiGet,
   type ContentBlock,
   type HeroData,
-  heroMediaUrls,
+  type HeroSlide,
+  heroSlides,
   parseBlockData,
 } from '@/lib/api';
 import { Button } from '@/components/ui';
+
+function clamp01(n: number) {
+  return Math.min(1, Math.max(0, n));
+}
 
 export function AdminHeroEditorClient() {
   const { ready, toast } = useAdminUi();
@@ -19,9 +24,11 @@ export function AdminHeroEditorClient() {
   const [subheadline, setSubheadline] = useState('');
   const [ctaLabel, setCtaLabel] = useState('');
   const [ctaUrl, setCtaUrl] = useState('');
-  const [mediaUrls, setMediaUrls] = useState<string[]>([]);
+  const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [intervalSec, setIntervalSec] = useState('5.5');
   const [busy, setBusy] = useState(false);
+  const [focalIdx, setFocalIdx] = useState(0);
+  const previewRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -31,7 +38,7 @@ export function AdminHeroEditorClient() {
       setSubheadline(data.subheadline || '');
       setCtaLabel(data.cta_label || '');
       setCtaUrl(data.cta_url || '');
-      setMediaUrls(heroMediaUrls(data));
+      setSlides(heroSlides(data));
       setIntervalSec(
         String(
           typeof data.media_interval_ms === 'number'
@@ -46,15 +53,26 @@ export function AdminHeroEditorClient() {
     if (!files?.length) return;
     setBusy(true);
     try {
-      const uploaded: string[] = [];
+      const uploaded: HeroSlide[] = [];
       for (const file of Array.from(files)) {
         const form = new FormData();
         form.append('file', file);
         form.append('folder', 'cms/hero');
-        const res = await adminUpload<{ url: string }>('/content/media', form);
-        uploaded.push(res.url);
+        const res = await adminUpload<{ url: string; object_key: string }>(
+          '/content/media',
+          form,
+        );
+        uploaded.push({
+          url: res.url || res.object_key,
+          focal_x: 0.5,
+          focal_y: 0.5,
+        });
       }
-      setMediaUrls((prev) => [...prev, ...uploaded]);
+      setSlides((prev) => {
+        const next = [...prev, ...uploaded];
+        setFocalIdx(next.length - 1);
+        return next;
+      });
       toast('Image uploaded', 'content-saved-toast');
     } catch {
       toast('Upload failed');
@@ -64,13 +82,30 @@ export function AdminHeroEditorClient() {
   }
 
   function moveSlide(idx: number, dir: -1 | 1) {
-    setMediaUrls((prev) => {
+    setSlides((prev) => {
       const next = [...prev];
       const j = idx + dir;
       if (j < 0 || j >= next.length) return prev;
       [next[idx], next[j]] = [next[j], next[idx]];
       return next;
     });
+    setFocalIdx((cur) => {
+      if (cur === idx) return idx + dir;
+      if (cur === idx + dir) return idx;
+      return cur;
+    });
+  }
+
+  function setFocalFromClick(e: React.MouseEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = clamp01((e.clientX - rect.left) / rect.width);
+    const y = clamp01((e.clientY - rect.top) / rect.height);
+    setSlides((prev) =>
+      prev.map((s, i) =>
+        i === focalIdx ? { ...s, focal_x: x, focal_y: y } : s,
+      ),
+    );
   }
 
   async function onSubmit(e: FormEvent) {
@@ -80,14 +115,16 @@ export function AdminHeroEditorClient() {
       const secs = Number(intervalSec);
       const media_interval_ms =
         Number.isFinite(secs) && secs >= 2 ? Math.round(secs * 1000) : 5500;
+      const urls = slides.map((s) => s.url);
       await adminSend('/content/blocks/hero', 'PUT', {
         data: {
           headline,
           subheadline,
           cta_label: ctaLabel,
           cta_url: ctaUrl,
-          media_urls: mediaUrls,
-          media_url: mediaUrls[0] || '',
+          slides,
+          media_urls: urls,
+          media_url: urls[0] || '',
           media_interval_ms,
         },
         is_active: true,
@@ -99,6 +136,8 @@ export function AdminHeroEditorClient() {
       setBusy(false);
     }
   }
+
+  const active = slides[focalIdx];
 
   return (
     <AdminShell title="Hero editor">
@@ -152,7 +191,8 @@ export function AdminHeroEditorClient() {
         <div className="admin-field">
           <span className="ds-label">Hero images</span>
           <p className="ds-caption">
-            Upload one or more images. Multiple images crossfade on the landing page.
+            Upload one or more images. Click a preview to set the focal point
+            (where the crop stays locked).
           </p>
           <input
             type="file"
@@ -165,15 +205,26 @@ export function AdminHeroEditorClient() {
               e.target.value = '';
             }}
           />
-          {mediaUrls.length === 0 ? (
+          {slides.length === 0 ? (
             <p className="ds-caption">No images yet.</p>
           ) : (
             <ul className="admin-hero-slides">
-              {mediaUrls.map((url, idx) => (
-                <li key={`${url}-${idx}`} className="admin-hero-slide">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt="" className="admin-hero-slide__img" />
+              {slides.map((slide, idx) => (
+                <li key={`${slide.url}-${idx}`} className="admin-hero-slide">
+                  <button
+                    type="button"
+                    className={`admin-hero-slide__pick${idx === focalIdx ? ' admin-hero-slide__pick--active' : ''}`}
+                    onClick={() => setFocalIdx(idx)}
+                    aria-pressed={idx === focalIdx}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={slide.url} alt="" className="admin-hero-slide__img" />
+                  </button>
                   <div className="admin-hero-slide__actions">
+                    <span className="ds-caption">
+                      Focal {((slide.focal_x ?? 0.5) * 100).toFixed(0)}% /{' '}
+                      {((slide.focal_y ?? 0.5) * 100).toFixed(0)}%
+                    </span>
                     <Button
                       type="button"
                       variant="ghost"
@@ -187,7 +238,7 @@ export function AdminHeroEditorClient() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      disabled={idx === mediaUrls.length - 1 || busy}
+                      disabled={idx === slides.length - 1 || busy}
                       onClick={() => moveSlide(idx, 1)}
                     >
                       Down
@@ -197,9 +248,12 @@ export function AdminHeroEditorClient() {
                       variant="danger"
                       size="sm"
                       disabled={busy}
-                      onClick={() =>
-                        setMediaUrls((prev) => prev.filter((_, i) => i !== idx))
-                      }
+                      onClick={() => {
+                        setSlides((prev) => prev.filter((_, i) => i !== idx));
+                        setFocalIdx((cur) =>
+                          cur > idx ? cur - 1 : cur === idx ? Math.max(0, idx - 1) : cur,
+                        );
+                      }}
                     >
                       Remove
                     </Button>
@@ -209,6 +263,34 @@ export function AdminHeroEditorClient() {
             </ul>
           )}
         </div>
+
+        {active ? (
+          <div className="admin-field admin-hero-focal">
+            <span className="ds-label">Focal point</span>
+            <p className="ds-caption">
+              Click the image to set focus. Storefront uses this for crop position.
+            </p>
+            <button
+              ref={previewRef}
+              type="button"
+              className="admin-hero-focal__preview"
+              data-testid="hero-focal-preview"
+              onClick={setFocalFromClick}
+              aria-label="Set focal point"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={active.url} alt="" />
+              <span
+                className="admin-hero-focal__mark"
+                style={{
+                  left: `${(active.focal_x ?? 0.5) * 100}%`,
+                  top: `${(active.focal_y ?? 0.5) * 100}%`,
+                }}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        ) : null}
 
         <Button
           type="submit"

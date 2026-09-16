@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -16,12 +17,36 @@ type contentBlockResponse struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
+type highlightSlideItem struct {
+	ID              string `json:"id"`
+	ImageURL        string `json:"image_url"`
+	Caption         string `json:"caption"`
+	CaptionPosition string `json:"caption_position"`
+	SortOrder       int    `json:"sort_order"`
+}
+
 type highlightItem struct {
-	ID       string  `json:"id"`
-	Title    string  `json:"title"`
-	MediaURL string  `json:"media_url"`
-	LinkURL  *string `json:"link_url,omitempty"`
-	Position int     `json:"position"`
+	ID       string               `json:"id"`
+	Title    string               `json:"title"`
+	MediaURL string               `json:"media_url"`
+	LinkURL  *string              `json:"link_url,omitempty"`
+	Position int                  `json:"position"`
+	Slides   []highlightSlideItem `json:"slides"`
+}
+
+var allowedCaptionPositions = map[string]bool{
+	"top": true, "centre": true, "bottom": true,
+}
+
+func normalizeCaptionPosition(pos string) string {
+	p := strings.TrimSpace(strings.ToLower(pos))
+	if p == "center" {
+		p = "centre"
+	}
+	if allowedCaptionPositions[p] {
+		return p
+	}
+	return "bottom"
 }
 
 type curatedShelfProduct struct {
@@ -47,11 +72,13 @@ type blogPostSummary struct {
 	CoverImage  *string    `json:"cover_image,omitempty"`
 	Status      string     `json:"status,omitempty"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
+	TotalReads  int64      `json:"total_reads"`
 }
 
 type blogPostDetail struct {
 	blogPostSummary
-	Body string `json:"body"`
+	Body              string `json:"body"`
+	CurrentlyReading  int64  `json:"currently_reading"`
 }
 
 type statsCounterResponse struct {
@@ -73,6 +100,7 @@ func (h *Handler) GetContentBlock(c *fiber.Ctx) error {
 	if err != nil {
 		return internalError(c, "GetContentBlock query", err)
 	}
+	block.Data = h.rewriteContentBlockData(block.Data)
 	return c.JSON(block)
 }
 
@@ -86,14 +114,58 @@ func (h *Handler) ListHighlights(c *fiber.Ctx) error {
 	defer rows.Close()
 
 	items := make([]highlightItem, 0)
+	ids := make([]string, 0)
 	for rows.Next() {
 		var item highlightItem
 		if err := rows.Scan(&item.ID, &item.Title, &item.MediaURL, &item.LinkURL, &item.Position); err != nil {
 			return internalError(c, "ListHighlights scan", err)
 		}
+		item.MediaURL = h.expandMedia(item.MediaURL)
+		item.Slides = []highlightSlideItem{}
 		items = append(items, item)
+		ids = append(ids, item.ID)
+	}
+	if err := h.attachHighlightSlides(c, items, ids); err != nil {
+		return internalError(c, "ListHighlights slides", err)
 	}
 	return c.JSON(fiber.Map{"highlights": items})
+}
+
+func (h *Handler) attachHighlightSlides(c *fiber.Ctx, items []highlightItem, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := h.db.Query(c.Context(), `
+		SELECT id, highlight_id, image_url, caption, caption_position, sort_order
+		FROM highlight_slides
+		WHERE highlight_id = ANY($1::uuid[])
+		ORDER BY highlight_id, sort_order, id`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	byHighlight := make(map[string][]highlightSlideItem, len(ids))
+	for rows.Next() {
+		var slide highlightSlideItem
+		var highlightID string
+		if err := rows.Scan(&slide.ID, &highlightID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder); err != nil {
+			return err
+		}
+		slide.ImageURL = h.expandMedia(slide.ImageURL)
+		byHighlight[highlightID] = append(byHighlight[highlightID], slide)
+	}
+	for i := range items {
+		if slides, ok := byHighlight[items[i].ID]; ok {
+			items[i].Slides = slides
+			if len(slides) > 0 {
+				items[i].MediaURL = slides[0].ImageURL
+			}
+		} else if items[i].Slides == nil {
+			items[i].Slides = []highlightSlideItem{}
+		}
+	}
+	return nil
 }
 
 func (h *Handler) GetCuratedShelf(c *fiber.Ctx) error {
@@ -137,6 +209,7 @@ func (h *Handler) GetCuratedShelf(c *fiber.Ctx) error {
 		if err != nil {
 			return internalError(c, "GetCuratedShelf images", err)
 		}
+		h.expandPrimaryImageMap(images)
 		for i := range shelf.Products {
 			if img, ok := images[shelf.Products[i].ID]; ok {
 				shelf.Products[i].PrimaryImage = img
@@ -148,9 +221,10 @@ func (h *Handler) GetCuratedShelf(c *fiber.Ctx) error {
 
 func (h *Handler) ListBlogPosts(c *fiber.Ctx) error {
 	rows, err := h.db.Query(c.Context(), `
-		SELECT id, title, slug, cover_image, published_at
-		FROM blog_posts WHERE status = 'published'
-		ORDER BY published_at DESC NULLS LAST`)
+		SELECT p.id, p.title, p.slug, p.cover_image, p.published_at,
+			COALESCE((SELECT COUNT(*) FROM blog_reads br WHERE br.post_id = p.id), 0)::bigint
+		FROM blog_posts p WHERE p.status = 'published'
+		ORDER BY p.published_at DESC NULLS LAST`)
 	if err != nil {
 		return internalError(c, "ListBlogPosts query", err)
 	}
@@ -159,9 +233,10 @@ func (h *Handler) ListBlogPosts(c *fiber.Ctx) error {
 	posts := make([]blogPostSummary, 0)
 	for rows.Next() {
 		var p blogPostSummary
-		if err := rows.Scan(&p.ID, &p.Title, &p.Slug, &p.CoverImage, &p.PublishedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Title, &p.Slug, &p.CoverImage, &p.PublishedAt, &p.TotalReads); err != nil {
 			return internalError(c, "ListBlogPosts scan", err)
 		}
+		p.CoverImage = h.expandMediaPtr(p.CoverImage)
 		posts = append(posts, p)
 	}
 	return c.JSON(fiber.Map{"posts": posts})
@@ -171,14 +246,26 @@ func (h *Handler) GetBlogPost(c *fiber.Ctx) error {
 	slug := c.Params("slug")
 	var p blogPostDetail
 	err := h.db.QueryRow(c.Context(), `
-		SELECT id, title, slug, body, cover_image, published_at
-		FROM blog_posts WHERE slug = $1 AND status = 'published'`, slug,
-	).Scan(&p.ID, &p.Title, &p.Slug, &p.Body, &p.CoverImage, &p.PublishedAt)
+		SELECT p.id, p.title, p.slug, p.body, p.cover_image, p.published_at,
+			COALESCE((SELECT COUNT(*) FROM blog_reads br WHERE br.post_id = p.id), 0)::bigint
+		FROM blog_posts p WHERE p.slug = $1 AND p.status = 'published'`, slug,
+	).Scan(&p.ID, &p.Title, &p.Slug, &p.Body, &p.CoverImage, &p.PublishedAt, &p.TotalReads)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return notFound(c, "blog post not found")
 	}
 	if err != nil {
 		return internalError(c, "GetBlogPost query", err)
+	}
+	p.CoverImage = h.expandMediaPtr(p.CoverImage)
+	if h.rdb != nil {
+		if n, e := h.blogPresenceCount(c, p.ID); e == nil {
+			p.CurrentlyReading = n
+		}
+	} else {
+		_ = h.db.QueryRow(c.Context(), `
+			SELECT COUNT(*)::bigint FROM blog_reads
+			WHERE post_id = $1 AND last_seen >= now() - interval '5 minutes'`, p.ID,
+		).Scan(&p.CurrentlyReading)
 	}
 	return c.JSON(p)
 }

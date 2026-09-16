@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { AdminStatusPill } from '@/components/admin/AdminStatusPill';
 import { formatKes } from '@/lib/format';
 
 export type AdminOrderItem = {
@@ -81,10 +82,10 @@ export function AdminOrderCards({
               <p className="ds-caption">{formatWhen(o.created_at)}</p>
             </div>
             <div className="admin-order-card__meta">
-              <span className="admin-order-card__pill">{o.status}</span>
-              <span className="admin-order-card__pill">{o.payment_status}</span>
+              <AdminStatusPill status={o.status} />
+              <AdminStatusPill status={o.payment_status} />
               {o.payment_method ? (
-                <span className="admin-order-card__pill">{o.payment_method}</span>
+                <AdminStatusPill status={o.payment_method} />
               ) : null}
             </div>
           </header>

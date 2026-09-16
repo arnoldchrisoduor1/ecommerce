@@ -3,37 +3,34 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useCart } from '@/components/cart/CartProvider';
-import { apiGet } from '@/lib/api';
-import {
-  accountQuery,
-  WISHLIST_CHANGED_EVENT,
-} from '@/lib/account';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { NavSearch } from '@/components/layout/NavSearch';
 import type { Category } from '@/lib/api';
+import { WISHLIST_CHANGED_EVENT } from '@/lib/account';
 
 type Props = {
   categories: Category[];
 };
 
 export function MainNav({ categories }: Props) {
-  const { openCart, cart, sessionId } = useCart();
+  const { openCart, cart } = useCart();
+  const { user, authFetch, openAuth } = useAuth();
   const links = categories.slice(0, 6);
   const count = cart?.item_count ?? 0;
   const [wishCount, setWishCount] = useState(0);
 
   const refreshWishlistCount = useCallback(async () => {
-    if (!sessionId) {
+    if (!user) {
       setWishCount(0);
       return;
     }
     try {
-      const res = await apiGet<{ items: unknown[] }>(
-        `/account/wishlist${accountQuery(sessionId)}`,
-      );
+      const res = await authFetch<{ items: unknown[] }>('/account/wishlist');
       setWishCount(res.items?.length ?? 0);
     } catch {
       /* keep prior count */
     }
-  }, [sessionId]);
+  }, [user, authFetch]);
 
   useEffect(() => {
     void refreshWishlistCount();
@@ -75,12 +72,22 @@ export function MainNav({ categories }: Props) {
         </nav>
 
         <div className="main-nav__actions">
-          <Link href="/account" className="main-nav__icon" aria-label="Account" data-testid="nav-account">
-            <AccountIcon />
-          </Link>
-          <Link href="/search" className="main-nav__icon" aria-label="Search">
-            <SearchIcon />
-          </Link>
+          {user ? (
+            <Link href="/account" className="main-nav__icon" aria-label="Account" data-testid="nav-account">
+              <AccountIcon />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className="main-nav__icon"
+              aria-label="Sign in"
+              data-testid="nav-account"
+              onClick={() => openAuth({ tab: 'login' })}
+            >
+              <AccountIcon />
+            </button>
+          )}
+          <NavSearch />
           <Link
             href="/wishlist"
             className="main-nav__icon"
@@ -117,15 +124,6 @@ function AccountIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="12" cy="8" r="3.5" />
       <path d="M5 19c1.5-3 4-4.5 7-4.5S17.5 16 19 19" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
     </svg>
   );
 }

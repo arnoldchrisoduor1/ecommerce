@@ -218,6 +218,11 @@ compose_up() {
     log "Backend runtime image already present — skip build"
   fi
 
+  if ! docker image inspect ecommerce-createbuckets:local >/dev/null 2>&1; then
+    log "Building createbuckets image (Chainguard mc + alpine)"
+    must_long "docker compose build createbuckets" "${COMPOSE[@]}" build createbuckets
+  fi
+
   if ! docker image inspect node:22-alpine >/dev/null 2>&1; then
     must_long "docker pull node:22-alpine" docker pull node:22-alpine
   fi
@@ -291,25 +296,10 @@ install_nginx() {
   local src_api="$ROOT/deploy/nginx/$API_DOMAIN"
   [[ -f "$src_fe" && -f "$src_api" ]] || fail "Missing rendered nginx configs"
 
-  if [[ ! -d "/etc/letsencrypt/live/$FRONTEND_DOMAIN" ]]; then
-    sudo cp "$src_fe" "/etc/nginx/sites-available/$FRONTEND_DOMAIN"
-  else
-    log "Cert exists for $FRONTEND_DOMAIN — leaving SSL blocks; refreshing proxy if needed"
-    if [[ ! -f "/etc/nginx/sites-available/$FRONTEND_DOMAIN" ]]; then
-      sudo cp "$src_fe" "/etc/nginx/sites-available/$FRONTEND_DOMAIN"
-    fi
-  fi
-  if [[ ! -d "/etc/letsencrypt/live/$API_DOMAIN" ]]; then
-    sudo cp "$src_api" "/etc/nginx/sites-available/$API_DOMAIN"
-  else
-    log "Cert exists for $API_DOMAIN — leaving SSL blocks"
-    if [[ ! -f "/etc/nginx/sites-available/$API_DOMAIN" ]]; then
-      sudo cp "$src_api" "/etc/nginx/sites-available/$API_DOMAIN"
-    fi
-  fi
-
-  ensure_proxy_pass "/etc/nginx/sites-available/$FRONTEND_DOMAIN" "http://127.0.0.1:${FRONTEND_HOST_PORT}"
-  ensure_proxy_pass "/etc/nginx/sites-available/$API_DOMAIN" "http://127.0.0.1:${BACKEND_HOST_PORT}"
+  # Never overwrite SSL-managed site files with the HTTP-only template.
+  # Certbot often stores one cert under FRONTEND_DOMAIN that also covers API (SAN).
+  install_or_refresh_site "$FRONTEND_DOMAIN" "$src_fe" "$FRONTEND_HOST_PORT" ""
+  install_or_refresh_site "$API_DOMAIN" "$src_api" "$BACKEND_HOST_PORT" "$MINIO_HOST_PORT"
 
   sudo ln -sfn "/etc/nginx/sites-available/$FRONTEND_DOMAIN" "/etc/nginx/sites-enabled/$FRONTEND_DOMAIN"
   sudo ln -sfn "/etc/nginx/sites-available/$API_DOMAIN" "/etc/nginx/sites-enabled/$API_DOMAIN"
@@ -318,26 +308,49 @@ install_nginx() {
   must_long "nginx reload" sudo systemctl reload nginx
 }
 
-ensure_proxy_pass() {
-  local file="$1"
-  local target="$2"
-  if ! sudo grep -q "$target" "$file" 2>/dev/null; then
-    log "Updating proxy_pass in $file → $target"
-    if [[ "$file" == *"$FRONTEND_DOMAIN"* ]]; then
-      sudo cp "$ROOT/deploy/nginx/$FRONTEND_DOMAIN" "$file"
-    else
-      sudo cp "$ROOT/deploy/nginx/$API_DOMAIN" "$file"
-    fi
+install_or_refresh_site() {
+  local domain="$1" src="$2" app_port="$3" minio_port="${4:-}"
+  local dest="/etc/nginx/sites-available/$domain"
+
+  if [[ ! -f "$dest" ]]; then
+    sudo cp "$src" "$dest"
+    log "Installed nginx site $domain"
+    return 0
   fi
+
+  if sudo grep -qE 'listen[[:space:]]+443' "$dest" 2>/dev/null; then
+    log "SSL site present for $domain — updating proxy ports in place (no template overwrite)"
+    sudo sed -i -E \
+      "/location \/ \{/,/\}/ s|proxy_pass http://127\.0\.0\.1:[0-9]+;|proxy_pass http://127.0.0.1:${app_port};|" \
+      "$dest"
+    if [[ -n "$minio_port" ]]; then
+      sudo sed -i -E \
+        "s|proxy_pass http://127\.0\.0\.1:[0-9]+/${MINIO_BUCKET}/;|proxy_pass http://127.0.0.1:${minio_port}/${MINIO_BUCKET}/;|" \
+        "$dest"
+    fi
+    return 0
+  fi
+
+  sudo cp "$src" "$dest"
+  log "Refreshed HTTP nginx site $domain"
 }
 
 ensure_certs() {
-  if [[ -d "/etc/letsencrypt/live/$FRONTEND_DOMAIN" && -d "/etc/letsencrypt/live/$API_DOMAIN" ]]; then
-    log "TLS certs already present for both domains"
-    return 0
-  fi
   if [[ -d "/etc/letsencrypt/live/$FRONTEND_DOMAIN" ]]; then
-    log "TLS cert present for $FRONTEND_DOMAIN"
+    if ! sudo grep -qE 'listen[[:space:]]+443' "/etc/nginx/sites-available/$API_DOMAIN" 2>/dev/null; then
+      log "TLS cert present but API site missing SSL — deploying via certbot"
+      local email
+      email="$(prompt "Email for Let's Encrypt" "admin@${FRONTEND_DOMAIN#*.}")"
+      log "Requesting/deploying certs via certbot (nginx plugin)"
+      if ! run_long "certbot" sudo certbot --nginx \
+        -d "$FRONTEND_DOMAIN" \
+        -d "$API_DOMAIN" \
+        --non-interactive --agree-tos -m "$email" --redirect; then
+        log "WARN: certbot failed (often DNS). Continuing with HTTP-only."
+      fi
+    else
+      log "TLS certs already present for $FRONTEND_DOMAIN (covers $API_DOMAIN)"
+    fi
     return 0
   fi
   local email

@@ -17,17 +17,27 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"ecommerce-backend/internal/auth"
+	"ecommerce-backend/internal/mailer"
 	"ecommerce-backend/internal/storage"
 )
 
 type Handler struct {
-	db    *pgxpool.Pool
-	rdb   *redis.Client
-	store *storage.Client
+	db       *pgxpool.Pool
+	rdb      *redis.Client
+	store    *storage.Client
+	mail     *mailer.Client
+	userAuth auth.UserConfig
 }
 
 func New(db *pgxpool.Pool, rdb *redis.Client, store *storage.Client) *Handler {
-	return &Handler{db: db, rdb: rdb, store: store}
+	h := &Handler{db: db, rdb: rdb, store: store, mail: mailer.New(rdb)}
+	if cfg, err := auth.LoadUserConfig(); err != nil {
+		log.Printf("user auth config: %v (auth endpoints will fail until JWT secret set)", err)
+	} else {
+		h.userAuth = cfg
+	}
+	return h
 }
 
 func notImplemented(c *fiber.Ctx) error {
@@ -265,6 +275,7 @@ func (h *Handler) ListProducts(c *fiber.Ctx) error {
 		if err != nil {
 			return internalError(c, "ListProducts fetch images", err)
 		}
+		h.expandPrimaryImageMap(imagesByProduct)
 		for _, p := range products {
 			if vs, ok := variantsByProduct[p.ID]; ok {
 				p.Variants = vs
@@ -426,6 +437,7 @@ func (h *Handler) GetProductBySlug(c *fiber.Ctx) error {
 		return internalError(c, "GetProductBySlug image rows", err)
 	}
 	imageRows.Close()
+	h.expandProductImages(p.Images)
 
 	return c.JSON(p)
 }
@@ -491,6 +503,7 @@ func (h *Handler) GetRelatedProducts(c *fiber.Ctx) error {
 		if err != nil {
 			return internalError(c, "GetRelatedProducts fetch images", err)
 		}
+		h.expandPrimaryImageMap(imagesByProduct)
 		for _, rp := range related {
 			if img, ok := imagesByProduct[rp.ID]; ok {
 				rp.PrimaryImage = img

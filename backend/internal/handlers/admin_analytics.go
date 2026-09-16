@@ -117,7 +117,7 @@ func (h *Handler) AdminLowStockAlerts(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"variants": items})
 }
 
-// AdminTopProducts placeholder — overview uses AdminOverview instead.
+// AdminTopProducts kept as alias — see AdminMostViewedProducts.
 func (h *Handler) AdminTopProducts(c *fiber.Ctx) error {
-	return notImplemented(c)
+	return h.AdminMostViewedProducts(c)
 }

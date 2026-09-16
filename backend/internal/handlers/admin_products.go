@@ -120,6 +120,7 @@ func (h *Handler) loadAdminProduct(c *fiber.Ctx, productID string, withVariants 
 		return nil, err
 	}
 	imgRows.Close()
+	h.expandProductImages(p.Images)
 	if len(p.Images) > 0 {
 		p.PrimaryImage = &p.Images[0]
 	}
@@ -159,6 +160,7 @@ func (h *Handler) AdminListProducts(c *fiber.Ctx) error {
 		if err != nil {
 			return internalError(c, "AdminListProducts images", err)
 		}
+		h.expandPrimaryImageMap(images)
 		for i := range products {
 			if img, ok := images[products[i].ID]; ok {
 				products[i].PrimaryImage = img
@@ -422,7 +424,7 @@ func (h *Handler) AdminAddProductImage(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return badRequest(c, "invalid request body")
 	}
-	req.URL = strings.TrimSpace(req.URL)
+	req.URL = h.normalizeMedia(strings.TrimSpace(req.URL))
 	if req.URL == "" {
 		return badRequest(c, "url is required")
 	}
@@ -468,6 +470,7 @@ func (h *Handler) AdminAddProductImage(c *fiber.Ctx) error {
 		return internalError(c, "AdminAddProductImage insert", err)
 	}
 
+	h.expandProductImage(&img)
 	_, _ = h.db.Exec(c.Context(), `UPDATE products SET updated_at = now() WHERE id = $1`, productID)
 	return c.Status(fiber.StatusCreated).JSON(img)
 }

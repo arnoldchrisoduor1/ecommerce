@@ -1,5 +1,5 @@
-﻿# Production stack for /root/ecommerce on hauseoftech (204.48.30.58).
-# Secrets and host ports live in deploy/.env (see .env.example) — not here.
+﻿# Production stack for /root/ecommerce on personal-server (104.248.224.133).
+# Secrets and host ports live in deploy/.env (from root .env) — not here.
 #
 # Default host binds (override in .env if needed):
 #   frontend  → 127.0.0.1:${FRONTEND_HOST_PORT:-3082}
@@ -65,8 +65,10 @@ services:
     command: migrate
     restart: "no"
 
+  # Official minio/* Hub images were removed (community is source-only).
+  # coollabsio/minio is a maintained drop-in; createbuckets installs mc into alpine.
   minio:
-    image: minio/minio:latest
+    image: coollabsio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     env_file: .env
@@ -83,20 +85,24 @@ services:
           memory: 160M
 
   createbuckets:
-    image: minio/mc:latest
+    image: ecommerce-createbuckets:local
+    build:
+      context: .
+      dockerfile: Dockerfile.createbuckets
     depends_on:
       - minio
     env_file: .env
-    entrypoint: >
-      /bin/sh -c "
-      for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-        mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" && break;
-        sleep 2;
-      done;
-      mc mb -p local/$$MINIO_BUCKET || true;
-      mc anonymous set download local/$$MINIO_BUCKET;
-      exit 0;
-      "
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+          mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && break
+          sleep 2
+        done
+        mc mb -p "local/$$MINIO_BUCKET" || true
+        mc anonymous set download "local/$$MINIO_BUCKET"
+        exit 0
     restart: "no"
 
   backend:
@@ -140,6 +146,8 @@ services:
       PORT: "3000"
       HOSTNAME: ${HOSTNAME:-0.0.0.0}
       NODE_ENV: ${NODE_ENV:-production}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-in-production}
     command: ["node", "server.js"]
     ports:
       - "127.0.0.1:${FRONTEND_HOST_PORT:-3082}:3000"

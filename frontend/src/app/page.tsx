@@ -15,16 +15,21 @@ import { unstable_noStore as noStore } from 'next/cache';
 import { AnnouncementBar } from '@/components/layout/AnnouncementBar';
 import { MainNav } from '@/components/layout/MainNav';
 import { StylistChat } from '@/components/layout/StylistChat';
+import { BackToTop } from '@/components/layout/BackToTop';
 import { CartProvider } from '@/components/cart/CartProvider';
 import { CartDrawer } from '@/components/cart/CartDrawer';
 import { ExitIntent } from '@/components/urgency/ExitIntent';
 import { PurchaseTicker } from '@/components/urgency/PurchaseTicker';
 import { BlogPreview } from '@/components/landing/BlogPreview';
-import { EmailCapture } from '@/components/landing/EmailCapture';
 import { FeaturedReviews } from '@/components/landing/FeaturedReviews';
 import { Hero } from '@/components/landing/Hero';
 import { HighlightsReel } from '@/components/landing/HighlightsReel';
 import { ProductShelf } from '@/components/landing/ProductShelf';
+import { SiteFooter } from '@/components/layout/SiteFooter';
+import { ActivityTicker } from '@/components/urgency/ActivityTicker';
+import { PageViewTracker } from '@/components/analytics/PageViewTracker';
+import { AuthProvider } from '@/components/auth/AuthProvider';
+import { DemoMascot } from '@/components/demo/DemoMascot';
 import './landing.css';
 import './catalog.css';
 
@@ -83,29 +88,35 @@ export default async function HomePage() {
   const data = await loadLanding();
 
   return (
-    <CartProvider>
-      <div className="landing-page">
-        <AnnouncementBar messages={data.messages} />
-        <MainNav categories={data.categories} />
-        <HighlightsReel highlights={data.highlights} />
-        <Hero hero={data.hero} />
-        <ProductShelf title="New arrivals" products={data.products} />
-        <FeaturedReviews reviews={data.reviews} />
-        <BlogPreview posts={data.posts} />
-        {data.itemsSold != null ? (
-          <section className="stats-strip" aria-label="Store stats">
-            <p className="ds-display ds-display--lg stats-strip__value">
-              {data.itemsSold.toLocaleString('en-KE')}
-            </p>
-            <p className="ds-label stats-strip__label">Items sold</p>
-          </section>
-        ) : null}
-        <EmailCapture joinedCount={data.joined} />
-        <StylistChat />
-        <CartDrawer />
-        <ExitIntent />
-        <PurchaseTicker />
-      </div>
-    </CartProvider>
+    <AuthProvider>
+      <CartProvider>
+        <PageViewTracker />
+        <div className="landing-page">
+          <AnnouncementBar messages={data.messages} />
+          <MainNav categories={data.categories} />
+          <HighlightsReel highlights={data.highlights} />
+          <Hero hero={data.hero} />
+          <ActivityTicker />
+          <ProductShelf title="New arrivals" products={data.products} />
+          <FeaturedReviews reviews={data.reviews} />
+          <BlogPreview posts={data.posts} />
+          {data.itemsSold != null ? (
+            <section className="stats-strip" aria-label="Store stats">
+              <p className="ds-display ds-display--lg stats-strip__value">
+                {data.itemsSold.toLocaleString('en-KE')}
+              </p>
+              <p className="ds-label stats-strip__label">Items sold</p>
+            </section>
+          ) : null}
+          <SiteFooter categories={data.categories} />
+          <StylistChat />
+          <BackToTop />
+          {process.env.NEXT_PUBLIC_APP_MODE === 'demo' ? <DemoMascot /> : null}
+          <CartDrawer />
+          <ExitIntent />
+          <PurchaseTicker />
+        </div>
+      </CartProvider>
+    </AuthProvider>
   );
 }

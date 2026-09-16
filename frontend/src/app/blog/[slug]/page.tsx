@@ -3,13 +3,17 @@ import { notFound } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
 import { apiGet, type BlogPost } from '@/lib/api';
 import { StoreChrome } from '@/components/layout/StoreChrome';
+import { BlogReadTracker } from '@/components/blog/BlogReadTracker';
 import '../../landing.css';
 
 export const dynamic = 'force-dynamic';
 
 type Props = { params: Promise<{ slug: string }> };
 
-type BlogPostDetail = BlogPost & { body: string };
+type BlogPostDetail = BlogPost & {
+  body: string;
+  currently_reading?: number;
+};
 
 export default async function BlogPostPage({ params }: Props) {
   noStore();
@@ -34,6 +38,11 @@ export default async function BlogPostPage({ params }: Props) {
           <Link href="/blog">Style guide</Link>
         </p>
         <h1 className="ds-display ds-display--lg">{post.title}</h1>
+        <BlogReadTracker
+          postId={post.id}
+          initialReading={post.currently_reading ?? 0}
+          initialReads={post.total_reads ?? 0}
+        />
         {post.cover_image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img

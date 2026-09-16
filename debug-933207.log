@@ -1,0 +1,3 @@
+{"sessionId":"933207","hypothesisId":"H1","location":"diag500b","message":"frontend proxy ECONNREFUSED to localhost:8081","data":{"proxyTarget":"http://localhost:8081","runtimeAPI_URL":"http://backend:8080","backendDirect":"200","frontendProxy":"500"},"timestamp":1757933000000}
+{"sessionId":"933207","hypothesisId":"H1","location":"next.config.ts:rewrites","message":"bake api rewrite origin","data":{"apiOrigin":"http://backend:8080","fromEnv":true},"timestamp":1789467939100,"runId":"build"}
+{"sessionId":"933207","hypothesisId":"H1","location":"verify-proxy","message":"post-fix proxy ok","data":{"hero":200,"announcement":200,"highlights":200,"publicHttps":200,"bakedOrigin":"http://backend:8080"},"timestamp":1757934000000,"runId":"post-fix"}

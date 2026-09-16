@@ -11,9 +11,9 @@ import (
 )
 
 func (h *Handler) requireStore(c *fiber.Ctx) error {
-	if h.store == nil {
+	if h.store == nil || !h.store.CanUpload() {
 		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
-			"error": "object storage not configured (set MINIO_ENDPOINT)",
+			"error": "object storage not configured (set S3_INTERNAL_ENDPOINT)",
 		})
 	}
 	return nil
@@ -79,12 +79,12 @@ func (h *Handler) AdminUploadContentMedia(c *fiber.Ctx) error {
 	defer src.Close()
 
 	objectKey := fmt.Sprintf("%s/%s%s", folder, uuid.NewString(), ext)
-	publicURL, err := h.store.Put(c.Context(), objectKey, src, fileHeader.Size, contentType)
+	key, err := h.store.Put(c.Context(), objectKey, src, fileHeader.Size, contentType)
 	if err != nil {
 		return internalError(c, "AdminUploadContentMedia put object", err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"url":        publicURL,
-		"object_key": objectKey,
+		"object_key": key,
+		"url":        h.store.PublicURL(key),
 	})
 }

@@ -31,7 +31,24 @@ build_frontend() {
     else
       log "node_modules present - skipping npm ci"
     fi
+    # Rewrites bake API_URL at build time (standalone). Must reach Windows npm via npm_cli.
     export API_URL="$PROD_API_URL"
+    # Task 17 — bake APP_MODE / demo contacts from root .env (default production).
+    if [[ -f "$REPO_ROOT/.env" ]]; then
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+          APP_MODE=*|NEXT_PUBLIC_APP_MODE=*|DEMO_CONTACT_EMAIL=*|DEMO_CONTACT_PHONE=*)
+            key="${line%%=*}"
+            val="${line#*=}"
+            val="${val%$'\r'}"
+            export "$key=$val"
+            ;;
+        esac
+      done <"$REPO_ROOT/.env"
+    fi
+    export APP_MODE="${APP_MODE:-production}"
+    export NEXT_PUBLIC_APP_MODE="${NEXT_PUBLIC_APP_MODE:-$APP_MODE}"
+    log "next build with API_URL=$API_URL APP_MODE=$APP_MODE"
     run_logged "next build" npm_cli run build
   )
   run_logged "package frontend" env REPO="$REPO_ROOT" bash "$LIB_DIR/pack-frontend.sh"

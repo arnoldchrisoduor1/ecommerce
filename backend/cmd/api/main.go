@@ -34,7 +34,9 @@ func main() {
 		log.Fatalf("failed to init minio: %v", err)
 	}
 	if store == nil {
-		log.Printf("MINIO_ENDPOINT unset — product image uploads will return 501")
+		log.Printf("S3_INTERNAL_ENDPOINT unset — product image uploads will return 501")
+	} else if !store.CanUpload() {
+		log.Printf("S3 public URL expansion only (no S3_INTERNAL_ENDPOINT) — uploads disabled")
 	}
 
 	app := fiber.New(fiber.Config{
@@ -45,8 +47,9 @@ func main() {
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: os.Getenv("CORS_ALLOW_ORIGINS"), // e.g. https://yourdomain.com
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowOrigins:     os.Getenv("CORS_ALLOW_ORIGINS"), // e.g. https://yourdomain.com
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		AllowCredentials: true,
 	}))
 
 	routes.RegisterPublicRoutes(app, dbPool, rdb, store)

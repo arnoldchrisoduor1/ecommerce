@@ -5,10 +5,10 @@ import { Badge, Button, Modal } from '@/components/ui';
 import { ViewerBadge } from '@/components/product/ViewerBadge';
 import { ProductCard } from '@/components/product/ProductCard';
 import { useCart } from '@/components/cart/CartProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 import type { ProductDetail, ProductListItem, ProductReview } from '@/lib/api';
-import { apiGet, apiSend } from '@/lib/api';
 import { formatKes } from '@/lib/format';
-import { accountQuery, notifyWishlistChanged } from '@/lib/account';
+import { notifyWishlistChanged } from '@/lib/account';
 
 type Props = {
   product: ProductDetail;
@@ -18,6 +18,7 @@ type Props = {
 
 export function PdpClient({ product, related, reviews }: Props) {
   const { addToCart, sessionId } = useCart();
+  const { user, accessToken, authFetch, requireAuth, ready } = useAuth();
   const sizes = useMemo(
     () => [...new Set(product.variants.map((v) => v.size).filter(Boolean))] as string[],
     [product.variants],
@@ -36,13 +37,14 @@ export function PdpClient({ product, related, reviews }: Props) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!ready || !user || !accessToken) {
+      setWishlisted(false);
+      return;
+    }
     let cancelled = false;
     async function check() {
       try {
-        const res = await apiGet<{ items: { id: string }[] }>(
-          `/account/wishlist${accountQuery(sessionId)}`,
-        );
+        const res = await authFetch<{ items: { id: string }[] }>('/account/wishlist');
         if (!cancelled) {
           setWishlisted(res.items.some((i) => i.id === product.id));
         }
@@ -54,19 +56,23 @@ export function PdpClient({ product, related, reviews }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, product.id]);
+  }, [ready, user, accessToken, product.id, authFetch]);
 
   async function toggleWishlist() {
-    if (!sessionId) return;
+    if (wishlisted) {
+      if (!requireAuth({ type: 'wishlist_remove', productId: product.id })) return;
+    } else if (!requireAuth({ type: 'wishlist_add', productId: product.id })) {
+      return;
+    }
     setBusy(true);
     try {
-      const q = accountQuery(sessionId);
       if (wishlisted) {
-        await apiSend(`/account/wishlist/${product.id}${q}`, 'DELETE');
+        await authFetch(`/account/wishlist/${product.id}`, { method: 'DELETE' });
         setWishlisted(false);
       } else {
-        await apiSend(`/account/wishlist/${product.id}${q}`, 'POST', {
-          session_id: sessionId,
+        await authFetch(`/account/wishlist/${product.id}`, {
+          method: 'POST',
+          body: JSON.stringify({}),
         });
         setWishlisted(true);
       }
@@ -117,13 +123,22 @@ export function PdpClient({ product, related, reviews }: Props) {
   return (
     <div className="pdp">
       <div className="pdp__gallery" data-testid="pdp-gallery">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className="pdp__image"
-          src={images[imageIdx]?.url}
-          alt={product.name}
-          decoding="async"
-        />
+        <div className="pdp__stage">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className="pdp__image"
+            src={images[imageIdx]?.url}
+            alt={product.name}
+            decoding="async"
+          />
+          <ViewerBadge
+            productId={product.id}
+            testId="pdp-viewer-count-badge"
+            showHighDemand
+            heartbeat
+            overlay
+          />
+        </div>
         {images.length > 1 ? (
           <div className="pdp__thumbs">
             {images.map((img, i) => (
@@ -157,10 +172,6 @@ export function PdpClient({ product, related, reviews }: Props) {
             formatKes(price)
           )}
         </p>
-
-        <div data-testid="pdp-viewer-count">
-          <ViewerBadge productId={product.id} testId="pdp-viewer-count-badge" showHighDemand heartbeat />
-        </div>
 
         {sizes.length > 0 ? (
           <div className="pdp__variants">

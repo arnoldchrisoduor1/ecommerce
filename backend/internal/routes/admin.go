@@ -64,6 +64,18 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, st
 	admin.Get("/customers/:id", h.AdminGetCustomer)
 	admin.Get("/saved-items", h.AdminListSavedItems)
 
+	// --- Activity feed (Task 15) ---
+	admin.Get("/activity", h.AdminActivityFeed)
+	admin.Get("/activity/summary", h.AdminActivitySummary)
+	admin.Get("/activity/export", h.AdminActivityExportCSV)
+
+	// --- Newsletter subscribers (Task 16) ---
+	admin.Get("/newsletter", h.AdminListNewsletter)
+	admin.Get("/newsletter/stats", h.AdminNewsletterStats)
+	admin.Get("/newsletter/export", h.AdminNewsletterExportCSV)
+	admin.Get("/newsletter/emails", h.AdminNewsletterEmails)
+	admin.Patch("/newsletter/:id", h.AdminPatchNewsletter)
+
 	// --- Reviews (approve/feature) ---
 	reviews := admin.Group("/reviews")
 	reviews.Get("/", h.AdminListReviews)
@@ -78,6 +90,10 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, st
 	content.Post("/highlights", h.AdminCreateHighlight)
 	content.Put("/highlights/:id", h.AdminUpdateHighlight)
 	content.Delete("/highlights/:id", h.AdminDeleteHighlight)
+	content.Post("/highlights/:id/slides", h.AdminCreateHighlightSlide)
+	content.Put("/highlights/:id/slides/reorder", h.AdminReorderHighlightSlides)
+	content.Put("/highlights/:id/slides/:slideId", h.AdminUpdateHighlightSlide)
+	content.Delete("/highlights/:id/slides/:slideId", h.AdminDeleteHighlightSlide)
 	content.Put("/shelves/:key", h.AdminUpdateCuratedShelf) // set product list + order
 	content.Put("/stats/:key", h.AdminSetStatsCounter)      // manual override
 
@@ -90,6 +106,11 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, st
 	blog.Delete("/:id", h.AdminDeleteBlogPost)
 
 	// --- Analytics ---
-	admin.Get("/analytics/top-products", h.AdminTopProducts)
+	admin.Get("/analytics/top-products", h.AdminMostViewedProducts)
 	admin.Get("/analytics/low-stock", h.AdminLowStockAlerts)
+	admin.Get("/analytics/most-viewed-products", h.AdminMostViewedProducts)
+	admin.Get("/analytics/most-viewed-products/:id/viewers", h.AdminProductViewers)
+	admin.Get("/analytics/most-visited-pages", h.AdminMostVisitedPages)
+	admin.Get("/analytics/traffic-presence", h.AdminTrafficPresence)
+	admin.Get("/analytics/blog-reads", h.AdminBlogAnalytics)
 }

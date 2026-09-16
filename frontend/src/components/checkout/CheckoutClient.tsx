@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui';
 import { useCart } from '@/components/cart/CartProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { apiGet, apiSend } from '@/lib/api';
 import { formatKes } from '@/lib/format';
 import { setAccountPhone } from '@/lib/account';
@@ -32,6 +33,7 @@ type Order = {
 export function CheckoutClient() {
   const router = useRouter();
   const { cart, cartId, ensureCartWithItem, refreshCart } = useCart();
+  const { requireAuth, authFetch, user } = useAuth();
   const [step, setStep] = useState<Step>('delivery');
   const [line1, setLine1] = useState('');
   const [city, setCity] = useState('');
@@ -136,21 +138,29 @@ export function CheckoutClient() {
     setStep('confirm');
   }
 
-  async function placeOrder() {
+  async function placeOrder(payloadOverride?: Record<string, unknown>) {
     setError('');
     const id = cartId || localStorage.getItem('studio_cart_id');
     if (!id) {
       setError('Cart missing');
       return;
     }
+    const payload = payloadOverride || {
+      cart_id: id,
+      shipping_address: { ...address, phone: phone || '0712345678' },
+      payment_method: payment,
+      discount_code: discountCode,
+      delivery_fee: quote?.delivery_fee,
+    };
+    if (!user) {
+      requireAuth({ type: 'place_order', payload });
+      return;
+    }
     setBusy(true);
     try {
-      const created = await apiSend<Order>('/checkout/', 'POST', {
-        cart_id: id,
-        shipping_address: { ...address, phone: phone || '0712345678' },
-        payment_method: payment,
-        discount_code: discountCode,
-        delivery_fee: quote?.delivery_fee,
+      const created = await authFetch<Order>('/checkout/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
       });
       setOrder(created);
       setAccountPhone(phone || '0712345678');
@@ -162,6 +172,16 @@ export function CheckoutClient() {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    function onReplay(e: Event) {
+      const detail = (e as CustomEvent<Record<string, unknown>>).detail;
+      if (detail) void placeOrder(detail);
+    }
+    window.addEventListener('studio:replay-place-order', onReplay);
+    return () => window.removeEventListener('studio:replay-place-order', onReplay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, cartId, phone, payment, discountCode, quote]);
 
   if (order) {
     return (

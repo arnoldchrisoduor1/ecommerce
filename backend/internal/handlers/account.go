@@ -85,6 +85,10 @@ func (h *Handler) ListMyOrders(c *fiber.Ctx) error {
 	customerID := strings.TrimSpace(c.Query("customer_id"))
 	sessionID := strings.TrimSpace(c.Query("session_id"))
 
+	if cid, err := h.resolveAccountCustomer(c); err == nil && cid != "" {
+		customerID = cid
+	}
+
 	if customerID == "" && sessionID != "" {
 		id, err := h.ensureGuestCustomer(c.Context(), sessionID)
 		if err != nil {
@@ -93,7 +97,7 @@ func (h *Handler) ListMyOrders(c *fiber.Ctx) error {
 		customerID = id
 	}
 	if customerID == "" && phone == "" && email == "" {
-		return badRequest(c, "phone, email, session_id, or customer_id is required")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
 	var custArg any
@@ -139,6 +143,9 @@ func (h *Handler) GetMyOrder(c *fiber.Ctx) error {
 	email := strings.TrimSpace(strings.ToLower(c.Query("email")))
 	customerID := strings.TrimSpace(c.Query("customer_id"))
 	sessionID := strings.TrimSpace(c.Query("session_id"))
+	if cid, err := h.resolveAccountCustomer(c); err == nil && cid != "" {
+		customerID = cid
+	}
 	if customerID == "" && sessionID != "" {
 		cid, err := h.ensureGuestCustomer(c.Context(), sessionID)
 		if err != nil {
@@ -147,7 +154,7 @@ func (h *Handler) GetMyOrder(c *fiber.Ctx) error {
 		customerID = cid
 	}
 	if phone == "" && email == "" && customerID == "" {
-		return badRequest(c, "phone, email, session_id, or customer_id is required")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
 	detail, err := h.loadAccountOrder(c.Context(), id)
@@ -250,6 +257,18 @@ type wishlistProduct struct {
 }
 
 func (h *Handler) resolveAccountCustomer(c *fiber.Ctx) (string, error) {
+	if userID, ok := c.Locals(ctxUserIDKey).(string); ok && userID != "" {
+		var customerID *string
+		err := h.db.QueryRow(c.Context(), `SELECT customer_id FROM users WHERE id = $1`, userID).Scan(&customerID)
+		if err != nil {
+			return "", errors.New("authentication required")
+		}
+		if customerID == nil || *customerID == "" {
+			return "", errors.New("customer profile missing")
+		}
+		return *customerID, nil
+	}
+	// Legacy guest path removed for gated actions — auth required.
 	if id := strings.TrimSpace(c.Query("customer_id")); id != "" {
 		return id, nil
 	}
@@ -262,7 +281,7 @@ func (h *Handler) resolveAccountCustomer(c *fiber.Ctx) (string, error) {
 		sessionID = strings.TrimSpace(body.SessionID)
 	}
 	if sessionID == "" {
-		return "", errors.New("session_id or customer_id is required")
+		return "", errors.New("authentication required")
 	}
 	return h.ensureGuestCustomer(c.Context(), sessionID)
 }
@@ -270,6 +289,9 @@ func (h *Handler) resolveAccountCustomer(c *fiber.Ctx) (string, error) {
 func (h *Handler) GetWishlist(c *fiber.Ctx) error {
 	customerID, err := h.resolveAccountCustomer(c)
 	if err != nil {
+		if err.Error() == "authentication required" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+		}
 		return badRequest(c, err.Error())
 	}
 
@@ -291,6 +313,7 @@ func (h *Handler) GetWishlist(c *fiber.Ctx) error {
 		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.BasePrice, &p.SalePrice, &p.ImageURL); err != nil {
 			return internalError(c, "GetWishlist scan", err)
 		}
+		p.ImageURL = h.expandMediaPtr(p.ImageURL)
 		items = append(items, p)
 	}
 	return c.JSON(fiber.Map{"items": items, "customer_id": customerID})
@@ -299,6 +322,9 @@ func (h *Handler) GetWishlist(c *fiber.Ctx) error {
 func (h *Handler) AddToWishlist(c *fiber.Ctx) error {
 	customerID, err := h.resolveAccountCustomer(c)
 	if err != nil {
+		if err.Error() == "authentication required" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+		}
 		return badRequest(c, err.Error())
 	}
 	productID := c.Params("productId")
@@ -315,12 +341,21 @@ func (h *Handler) AddToWishlist(c *fiber.Ctx) error {
 	if err != nil {
 		return internalError(c, "AddToWishlist insert", err)
 	}
+	uid := customerID
+	pid := productID
+	var price float64
+	_ = h.db.QueryRow(c.Context(), `
+		SELECT COALESCE(sale_price, base_price)::float8 FROM products WHERE id = $1`, productID).Scan(&price)
+	h.emitActivity("wishlist_add", &uid, &pid, nil, &price)
 	return c.JSON(fiber.Map{"ok": true, "customer_id": customerID})
 }
 
 func (h *Handler) RemoveFromWishlist(c *fiber.Ctx) error {
 	customerID, err := h.resolveAccountCustomer(c)
 	if err != nil {
+		if err.Error() == "authentication required" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+		}
 		return badRequest(c, err.Error())
 	}
 	productID := c.Params("productId")

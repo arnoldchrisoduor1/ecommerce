@@ -1,0 +1,5 @@
+# mc binary from Chainguard (official minio/mc Hub image removed).
+FROM cgr.dev/chainguard/minio-client:latest AS mc
+FROM alpine:3.20
+COPY --from=mc /usr/bin/mc /usr/local/bin/mc
+ENTRYPOINT ["/bin/sh", "-c"]

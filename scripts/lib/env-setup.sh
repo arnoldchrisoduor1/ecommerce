@@ -11,7 +11,7 @@ REQUIRED_KEYS=(
   DATABASE_URL REDIS_ADDR
   ADMIN_EMAIL ADMIN_PASSWORD ADMIN_JWT_SECRET
   MINIO_ROOT_USER MINIO_ROOT_PASSWORD
-  MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET
+  MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET
   API_URL
 )
 
@@ -64,6 +64,8 @@ materialize_deploy_env() {
     -e 's|^REDIS_ADDR=127\.0\.0\.1|REDIS_ADDR=redis|g' \
     -e 's|^MINIO_ENDPOINT=localhost:9000|MINIO_ENDPOINT=minio:9000|g' \
     -e 's|^MINIO_ENDPOINT=127\.0\.0\.1:9000|MINIO_ENDPOINT=minio:9000|g' \
+    -e 's|^S3_INTERNAL_ENDPOINT=localhost:9000|S3_INTERNAL_ENDPOINT=minio:9000|g' \
+    -e 's|^S3_INTERNAL_ENDPOINT=127\.0\.0\.1:9000|S3_INTERNAL_ENDPOINT=minio:9000|g' \
     "$dst"
 
   # Defaults for keys compose needs (only if missing / empty)
@@ -78,6 +80,22 @@ materialize_deploy_env() {
   [[ -n "$(env_get "$dst" PORT)" ]] || env_set_or_replace "$dst" PORT "8080"
   [[ -n "$(env_get "$dst" REDIS_ADDR)" ]] || env_set_or_replace "$dst" REDIS_ADDR "redis:6379"
   [[ -n "$(env_get "$dst" MINIO_ENDPOINT)" ]] || env_set_or_replace "$dst" MINIO_ENDPOINT "minio:9000"
+  [[ -n "$(env_get "$dst" S3_INTERNAL_ENDPOINT)" ]] || env_set_or_replace "$dst" S3_INTERNAL_ENDPOINT "$(env_get "$dst" MINIO_ENDPOINT)"
+  [[ -n "$(env_get "$dst" S3_INTERNAL_ENDPOINT)" ]] || env_set_or_replace "$dst" S3_INTERNAL_ENDPOINT "minio:9000"
+  # Keep legacy MINIO_ENDPOINT in sync for older compose snippets
+  [[ -n "$(env_get "$dst" MINIO_ENDPOINT)" ]] || env_set_or_replace "$dst" MINIO_ENDPOINT "$(env_get "$dst" S3_INTERNAL_ENDPOINT)"
+  local api_domain pub
+  api_domain="$(env_get "$dst" API_DOMAIN)"
+  pub="$(env_get "$dst" S3_PUBLIC_BASE_URL)"
+  if [[ -z "$pub" ]]; then
+    pub="$(env_get "$dst" MINIO_PUBLIC_BASE_URL)"
+  fi
+  if [[ -z "$pub" && -n "$api_domain" ]]; then
+    pub="https://${api_domain}/media"
+  fi
+  [[ -n "$pub" ]] || pub="https://ecomm-api.oduor-arnold.com/media"
+  env_set_or_replace "$dst" S3_PUBLIC_BASE_URL "$pub"
+  env_set_or_replace "$dst" MINIO_PUBLIC_BASE_URL "$pub"
 
   # Derive POSTGRES_* from DATABASE_URL if needed
   local dburl user pass hostdb
@@ -131,6 +149,13 @@ validate_deploy_env() {
   if ((${#missing[@]} > 0)); then
     fail "deploy/.env missing required keys: ${missing[*]}"
   fi
+  local endpoint pub
+  endpoint="$(env_get "$file" S3_INTERNAL_ENDPOINT)"
+  [[ -n "$endpoint" ]] || endpoint="$(env_get "$file" MINIO_ENDPOINT)"
+  pub="$(env_get "$file" S3_PUBLIC_BASE_URL)"
+  [[ -n "$pub" ]] || pub="$(env_get "$file" MINIO_PUBLIC_BASE_URL)"
+  [[ -n "$endpoint" ]] || fail "deploy/.env missing S3_INTERNAL_ENDPOINT (or MINIO_ENDPOINT)"
+  [[ -n "$pub" ]] || fail "deploy/.env missing S3_PUBLIC_BASE_URL (or MINIO_PUBLIC_BASE_URL)"
   log "Env validation OK (${#REQUIRED_KEYS[@]} required keys)" OK
 }
 

@@ -148,25 +148,44 @@ func (h *Handler) CreateOrder(c *fiber.Ctx) error {
 		return internalError(c, "CreateOrder marshal address", err)
 	}
 
+	var customerID *string
+	if userID, ok := c.Locals(ctxUserIDKey).(string); ok && userID != "" {
+		var cid string
+		err = h.db.QueryRow(c.Context(), `SELECT customer_id FROM users WHERE id = $1`, userID).Scan(&cid)
+		if err != nil || cid == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+		}
+		customerID = &cid
+	} else {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
 	tx, err := h.db.Begin(c.Context())
 	if err != nil {
 		return internalError(c, "CreateOrder begin tx", err)
 	}
 	defer tx.Rollback(c.Context())
 
-	var customerID *string
-	err = tx.QueryRow(c.Context(), `SELECT customer_id FROM carts WHERE id = $1`, req.CartID).Scan(&customerID)
+	_, err = tx.Exec(c.Context(), `UPDATE carts SET customer_id = $1 WHERE id = $2`, *customerID, req.CartID)
+	if err != nil {
+		return internalError(c, "CreateOrder attach customer", err)
+	}
+
+	var cartCustomer *string
+	err = tx.QueryRow(c.Context(), `SELECT customer_id FROM carts WHERE id = $1`, req.CartID).Scan(&cartCustomer)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return notFound(c, "cart not found")
 	}
 	if err != nil {
 		return internalError(c, "CreateOrder load cart", err)
 	}
+	_ = cartCustomer
 
 	rows, err := tx.Query(c.Context(), `
 		SELECT ci.variant_id, ci.quantity,
 			COALESCE(pv.price_override, p.sale_price, p.base_price)::float8,
-			pv.stock_qty
+			pv.stock_qty,
+			p.id
 		FROM cart_items ci
 		JOIN product_variants pv ON pv.id = ci.variant_id
 		JOIN products p ON p.id = pv.product_id
@@ -181,12 +200,13 @@ func (h *Handler) CreateOrder(c *fiber.Ctx) error {
 		Quantity  int
 		UnitPrice float64
 		StockQty  int
+		ProductID string
 	}
 	lines := make([]orderLine, 0)
 	var subtotal float64
 	for rows.Next() {
 		var line orderLine
-		if err := rows.Scan(&line.VariantID, &line.Quantity, &line.UnitPrice, &line.StockQty); err != nil {
+		if err := rows.Scan(&line.VariantID, &line.Quantity, &line.UnitPrice, &line.StockQty, &line.ProductID); err != nil {
 			rows.Close()
 			return internalError(c, "CreateOrder scan item", err)
 		}
@@ -283,6 +303,13 @@ func (h *Handler) CreateOrder(c *fiber.Ctx) error {
 
 	if err := tx.Commit(c.Context()); err != nil {
 		return internalError(c, "CreateOrder commit", err)
+	}
+
+	for _, line := range lines {
+		pid := line.ProductID
+		oid := orderID
+		price := line.UnitPrice
+		h.emitActivity("purchase", customerID, &pid, &oid, &price)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(orderResponse{

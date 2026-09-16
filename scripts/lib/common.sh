@@ -11,7 +11,7 @@ mkdir -p "$LOG_DIR" "$ARTIFACT_DIR"
 LOG_FILE="${LOG_FILE:-$LOG_DIR/deploy-$TIMESTAMP.log}"
 STARTED_AT="$(date +%s)"
 
-ECOMM_SSH_HOST="${ECOMM_SSH_HOST:-root@204.48.30.58}"
+ECOMM_SSH_HOST="${ECOMM_SSH_HOST:-root@104.248.224.133}"
 ECOMM_REMOTE_ROOT="${ECOMM_REMOTE_ROOT:-/root/ecommerce}"
 ECOMM_SSH_KEY="${ECOMM_SSH_KEY:-}"
 ECOMM_MODE="${ECOMM_MODE:-1}"
@@ -120,15 +120,51 @@ ssh_test() {
       "$ECOMM_SSH_HOST" 'echo SSH_OK; hostname; whoami'
 }
 
+# Resolve ecommerce domains and confirm they point at the deploy host.
+check_domains() {
+  local fe="${FRONTEND_DOMAIN:-ecommerce.oduor-arnold.com}"
+  local api="${API_DOMAIN:-ecomm-api.oduor-arnold.com}"
+  local expect_ip
+  expect_ip="$(echo "$ECOMM_SSH_HOST" | sed -E 's/^[^@]+@//')"
+  log "Checking DNS for $fe / $api (expect $expect_ip)..."
+  local fe_ip api_ip
+  fe_ip="$(getent ahostsv4 "$fe" 2>/dev/null | awk '{print $1; exit}')"
+  api_ip="$(getent ahostsv4 "$api" 2>/dev/null | awk '{print $1; exit}')"
+  if [[ -z "$fe_ip" ]]; then
+    fe_ip="$(dig +short A "$fe" 2>/dev/null | head -1 || true)"
+  fi
+  if [[ -z "$api_ip" ]]; then
+    api_ip="$(dig +short A "$api" 2>/dev/null | head -1 || true)"
+  fi
+  log "  $fe -> ${fe_ip:-UNRESOLVED}"
+  log "  $api -> ${api_ip:-UNRESOLVED}"
+  if [[ "$fe_ip" != "$expect_ip" || "$api_ip" != "$expect_ip" ]]; then
+    log "DNS does not match deploy host $expect_ip — TLS/certbot may fail until A records update" WARN
+  else
+    log "DNS OK for both domains" OK
+  fi
+  # Reachability: any HTTP response from nginx counts (404 before site install is OK)
+  local code
+  code="$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "http://${fe}/" 2>/dev/null || echo 000)"
+  if [[ "$code" =~ ^[12345][0-9][0-9]$ ]]; then
+    log "HTTP reachable: http://${fe}/ (HTTP $code)" OK
+  else
+    log "HTTP not reachable yet for $fe (code=$code)" WARN
+  fi
+}
+
 # On WSL always use Windows npm for Next.js (avoids linux SWC fetch on /mnt/c).
 npm_cli() {
   if grep -qi microsoft /proc/version 2>/dev/null \
     && [[ -f "/mnt/c/Program Files/nodejs/npm.cmd" ]]; then
-    local windir
+    local windir prefix=""
     windir="$(wslpath -w "$(pwd)")"
     log "npm via Windows in $windir"
+    # cmd.exe does not inherit WSL exports — forward build-critical env vars.
+    [[ -n "${API_URL:-}" ]] && prefix+="set API_URL=${API_URL}&& "
+    [[ -n "${NODE_ENV:-}" ]] && prefix+="set NODE_ENV=${NODE_ENV}&& "
     # No nested quotes — paths under C:\dev\... have no spaces.
-    cmd.exe /c "cd /d $windir && npm $*"
+    cmd.exe /c "cd /d $windir && ${prefix}npm $*"
     return $?
   fi
   if command -v npm >/dev/null 2>&1 && [[ "$(command -v npm)" != /mnt/c/* ]]; then

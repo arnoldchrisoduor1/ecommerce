@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Trigger deploy-server.sh on the VPS (non-interactive by default).
 set -euo pipefail
-REMOTE="${REMOTE:-root@204.48.30.58}"
+REMOTE="${REMOTE:-root@104.248.224.133}"
 DEST="${DEST:-/root/ecommerce}"
-MODE="${ECOMM_MODE:-2}"
+MODE="${ECOMM_MODE:-1}"
 
 SSH_OPTS=(-o ConnectTimeout=25 -o ServerAliveInterval=15 -o Ciphers=aes128-ctr -o IPQoS=none -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new)
 if [[ -n "${SSH_IDENTITY:-}" ]]; then

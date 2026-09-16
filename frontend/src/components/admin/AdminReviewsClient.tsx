@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { useAdminUi } from '@/components/admin/AdminUiProvider';
+import { AdminStatusPill } from '@/components/admin/AdminStatusPill';
 import { adminGet, adminSend } from '@/lib/admin';
 import { Button } from '@/components/ui';
 
@@ -56,7 +57,9 @@ export function AdminReviewsClient() {
               <td>{r.product_name}</td>
               <td>{r.customer_name}</td>
               <td>{r.rating}</td>
-              <td>{r.status}</td>
+              <td>
+                <AdminStatusPill status={r.status} />
+              </td>
               <td>
                 <Button
                   variant={r.is_featured ? 'accent' : 'secondary'}

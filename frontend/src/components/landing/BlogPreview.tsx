@@ -35,6 +35,9 @@ export function BlogPreview({ posts }: Props) {
                 <div className="blog-preview__cover blog-preview__cover--empty" aria-hidden="true" />
               )}
               <span className="ds-display ds-display--sm">{p.title}</span>
+              <span className="ds-caption blog-preview__reads">
+                {p.total_reads === 1 ? '1 read' : `${p.total_reads ?? 0} reads`}
+              </span>
             </Link>
           </li>
         ))}

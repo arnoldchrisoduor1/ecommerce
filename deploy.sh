@@ -22,6 +22,8 @@ source "$ROOT/scripts/lib/test-local.sh"
 source "$ROOT/scripts/lib/env-setup.sh"
 # shellcheck source=scripts/lib/git-push.sh
 source "$ROOT/scripts/lib/git-push.sh"
+# shellcheck source=scripts/lib/env-check.sh
+source "$ROOT/scripts/lib/env-check.sh"
 
 lf_normalize_scripts
 
@@ -47,31 +49,33 @@ do_remote() {
   local mode
   mode="${ECOMM_MODE:-}"
   if [[ -z "$mode" ]]; then
-    mode="$(prompt "Server menu mode (1=full 2=compose 3=nginx)" "2")"
+    mode="$(prompt "Server menu mode (1=full+seed+nginx 2=compose+seed 3=nginx 5=seed-only)" "1")"
   fi
   export ECOMM_MODE="$mode"
-  confirm_or_exit "Run deploy-server.sh on ${REMOTE} mode ${mode}?"
+  confirm_or_exit "Run deploy-server.sh on ${REMOTE} mode ${mode} (seed runs in modes 1/2/5)?"
   run_logged "remote deploy-server.sh" bash "$LIB_DIR/remote-run.sh"
 }
 
 usage_menu() {
   echo
-  echo "Ecommerce deploy (WSL)"
+  echo "Ecommerce deploy (WSL) -> 104.248.224.133"
   echo "  repo:   $REPO_ROOT"
   echo "  log:    $LOG_FILE"
   echo "  ssh:    $ECOMM_SSH_HOST -> $ECOMM_REMOTE_ROOT"
   echo "  key:    ${ECOMM_SSH_KEY:-unset}"
+  echo "  sites:  ecommerce.oduor-arnold.com / ecomm-api.oduor-arnold.com"
   echo
-  echo "  1) End-to-end: test + build + git push + sync + server  [default]"
+  echo "  1) End-to-end: test + build + git push + sync + server (seed+nginx)  [default]"
   echo "  2) Build locally (FE+BE)"
   echo "  3) Test locally (go vet/build)"
   echo "  4) Git commit + push"
-  echo "  5) Sync + server deploy (no rebuild)"
-  echo "  6) Build + sync + server (skip test/git)"
-  echo "  7) Server deploy only (remote)"
+  echo "  5) Sync + server deploy (no rebuild; seed on server)"
+  echo "  6) Build + sync + server (skip test/git; seed on server)"
+  echo "  7) Server deploy only (remote; seed in mode 1/2/5)"
   echo "  8) Env setup only"
   echo "  9) Backend build only"
   echo " 10) Frontend build only"
+  echo " 11) Environment check (nginx/docker/ssl/ports/external)"
   echo
 }
 
@@ -89,7 +93,8 @@ resolve_choice() {
     env) echo "8" ;;
     be|backend) echo "9" ;;
     fe|frontend) echo "10" ;;
-    10) echo "10" ;;
+    check|envcheck|preflight) echo "11" ;;
+    10|11) echo "$raw" ;;
     [1-9]) echo "$raw" ;;
     *) fail "Unknown option: $raw (try ./deploy.sh --help)" ;;
   esac
@@ -98,7 +103,7 @@ resolve_choice() {
 main() {
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "${1:-}" == "help" ]]; then
     usage_menu
-    echo "Also: ./deploy.sh e2e|build|test|git|sync|release|remote|env|be|fe"
+    echo "Also: ./deploy.sh e2e|build|test|git|sync|release|remote|env|be|fe|check"
     exit 0
   fi
 
@@ -112,7 +117,7 @@ main() {
   fi
   log "Menu choice: $choice"
 
-  local do_test=0 do_build=0 do_be=0 do_fe=0 do_git=0 do_env=0 do_sync=0 do_remote=0
+  local do_test=0 do_build=0 do_be=0 do_fe=0 do_git=0 do_env=0 do_sync=0 do_remote=0 do_envcheck=0
   case "$choice" in
     1)  do_test=1; do_build=1; do_git=1; do_env=1; do_sync=1; do_remote=1 ;;
     2)  do_build=1 ;;
@@ -124,14 +129,19 @@ main() {
     8)  do_env=1 ;;
     9)  do_be=1 ;;
     10) do_fe=1 ;;
+    11) do_envcheck=1 ;;
     *) fail "Invalid choice: $choice" ;;
   esac
 
-  log "Plan test=$do_test build=$do_build be=$do_be fe=$do_fe git=$do_git env=$do_env sync=$do_sync remote=$do_remote"
+  log "Plan test=$do_test build=$do_build be=$do_be fe=$do_fe git=$do_git env=$do_env sync=$do_sync remote=$do_remote envcheck=$do_envcheck"
   confirm_or_exit "Run this plan?"
 
+  if (( do_envcheck )); then
+    env_check
+  fi
   if (( do_sync || do_remote )); then
     ssh_test
+    check_domains
   fi
   if (( do_env )); then
     env_setup

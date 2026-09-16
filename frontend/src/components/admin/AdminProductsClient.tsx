@@ -13,6 +13,7 @@ import {
   slugify,
 } from '@/lib/admin';
 import { apiGet } from '@/lib/api';
+import { AdminStatusPill } from '@/components/admin/AdminStatusPill';
 import { Button } from '@/components/ui';
 
 type ProductImage = {
@@ -114,7 +115,9 @@ export function AdminProductsListClient() {
               </td>
               <td>{p.slug}</td>
               <td>{p.base_price}</td>
-              <td>{p.status}</td>
+              <td>
+                <AdminStatusPill status={p.status} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -138,6 +141,7 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
   const [categories, setCategories] = useState<FlatCategory[]>([]);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [images, setImages] = useState<ProductImage[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [newSku, setNewSku] = useState('');
   const [newSize, setNewSize] = useState('');
@@ -221,6 +225,15 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
           stock_qty: 10,
           low_stock_threshold: 3,
         });
+        for (const file of pendingFiles) {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('folder', `products/${created.id}`);
+          const media = await adminUpload<{ url: string; object_key: string }>('/content/media', fd);
+          await adminSend(`/products/${created.id}/images`, 'POST', {
+            url: media.object_key || media.url,
+          });
+        }
         toast('Product saved', 'product-saved-toast');
         router.push(`/admin/products/${created.id}`);
       }
@@ -307,9 +320,13 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
         const form = new FormData();
         form.append('file', file);
         form.append('folder', `products/${productId}`);
-        const media = await adminUpload<{ url: string }>('/content/media', form);
+        const media = await adminUpload<{ url: string; object_key: string }>(
+          '/content/media',
+          form,
+        );
         const img = await adminSend<ProductImage>(`/products/${productId}/images`, 'POST', {
-          url: media.url,
+          // Prefer key so DB never stores absolute URLs.
+          url: media.object_key || media.url,
         });
         uploaded.push(img);
       }
@@ -317,7 +334,7 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
       toast('Image uploaded');
     } catch (err) {
       if (err instanceof AdminApiError && err.status === 501) {
-        toast('Image upload needs MinIO (set MINIO_ENDPOINT)');
+        toast('Image upload needs object storage (set S3_INTERNAL_ENDPOINT)');
       } else {
         toast('Upload failed');
       }
@@ -450,6 +467,26 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
             </select>
           </label>
         </div>
+
+        {!productId && (
+          <div className="admin-field">
+            <span className="ds-label">Images (optional — upload more after saving)</span>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={busy}
+              onChange={(e) => {
+                if (e.target.files) setPendingFiles(Array.from(e.target.files));
+              }}
+            />
+            {pendingFiles.length > 0 && (
+              <p className="ds-caption" style={{ marginTop: 4 }}>
+                {pendingFiles.length} file{pendingFiles.length > 1 ? 's' : ''} queued
+              </p>
+            )}
+          </div>
+        )}
 
         <Button type="submit" variant="primary" size="md" disabled={busy} data-testid="save-product">
           Save product

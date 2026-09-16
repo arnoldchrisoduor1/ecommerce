@@ -1,4 +1,14 @@
 /** Parse stylist SSE: `data: {"text":"..."}` chunks and `[DONE]`. */
+
+export async function fetchStylistStatus(): Promise<{ configured: boolean }> {
+  const res = await fetch('/api/stylist/status', {
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  if (!res.ok) return { configured: false };
+  return res.json() as Promise<{ configured: boolean }>;
+}
+
 export async function streamStylistChat(
   message: string,
   onChunk: (text: string) => void,

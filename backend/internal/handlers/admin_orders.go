@@ -127,6 +127,18 @@ func attachOrderItems(orders []adminOrderCard, itemsByOrder map[string][]adminOr
 	}
 }
 
+func (h *Handler) expandOrderItemMedia(items []adminOrderItem) {
+	for i := range items {
+		items[i].ImageURL = h.expandMediaPtr(items[i].ImageURL)
+	}
+}
+
+func (h *Handler) expandOrderCardsMedia(orders []adminOrderCard) {
+	for i := range orders {
+		h.expandOrderItemMedia(orders[i].Items)
+	}
+}
+
 func (h *Handler) listAdminOrderCards(ctx context.Context, limit int) ([]adminOrderCard, error) {
 	q := `
 		SELECT ` + adminOrderSelectCols + `
@@ -162,6 +174,7 @@ func (h *Handler) listAdminOrderCards(ctx context.Context, limit int) ([]adminOr
 		return nil, err
 	}
 	attachOrderItems(orders, itemsByOrder)
+	h.expandOrderCardsMedia(orders)
 	return orders, nil
 }
 
@@ -181,6 +194,7 @@ func (h *Handler) loadAdminOrderCard(ctx context.Context, id string) (adminOrder
 	if items, ok := itemsByOrder[id]; ok {
 		o.Items = items
 	}
+	h.expandOrderItemMedia(o.Items)
 	return o, nil
 }
 

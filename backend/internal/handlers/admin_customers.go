@@ -11,12 +11,14 @@ import (
 )
 
 type adminCustomerSummary struct {
-	ID        string    `json:"id"`
-	Email     *string   `json:"email,omitempty"`
-	Phone     *string   `json:"phone,omitempty"`
-	FullName  *string   `json:"full_name,omitempty"`
-	IsGuest   bool      `json:"is_guest"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string     `json:"id"`
+	Email      *string    `json:"email,omitempty"`
+	Phone      *string    `json:"phone,omitempty"`
+	FullName   *string    `json:"full_name,omitempty"`
+	IsGuest    bool       `json:"is_guest"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	Online     bool       `json:"online"`
 }
 
 type adminCustomerDetail struct {
@@ -26,8 +28,19 @@ type adminCustomerDetail struct {
 
 func (h *Handler) AdminListCustomers(c *fiber.Ctx) error {
 	rows, err := h.db.Query(c.Context(), `
-		SELECT id, email, phone, full_name, is_guest, created_at
-		FROM customers ORDER BY created_at DESC`)
+		SELECT
+			c.id, c.email, c.phone, c.full_name, c.is_guest, c.created_at,
+			ls.last_seen,
+			COALESCE(ls.last_seen >= now() - interval '5 minutes', false) AS online
+		FROM customers c
+		LEFT JOIN LATERAL (
+			SELECT s.last_seen
+			FROM sessions s
+			WHERE s.user_id = c.id
+			ORDER BY s.last_seen DESC
+			LIMIT 1
+		) ls ON true
+		ORDER BY c.created_at DESC`)
 	if err != nil {
 		return internalError(c, "AdminListCustomers query", err)
 	}
@@ -36,7 +49,8 @@ func (h *Handler) AdminListCustomers(c *fiber.Ctx) error {
 	customers := make([]adminCustomerSummary, 0)
 	for rows.Next() {
 		var cust adminCustomerSummary
-		if err := rows.Scan(&cust.ID, &cust.Email, &cust.Phone, &cust.FullName, &cust.IsGuest, &cust.CreatedAt); err != nil {
+		if err := rows.Scan(&cust.ID, &cust.Email, &cust.Phone, &cust.FullName, &cust.IsGuest, &cust.CreatedAt,
+			&cust.LastSeenAt, &cust.Online); err != nil {
 			return internalError(c, "AdminListCustomers scan", err)
 		}
 		customers = append(customers, cust)
@@ -139,6 +153,7 @@ func (h *Handler) AdminListSavedItems(c *fiber.Ctx) error {
 			return internalError(c, "AdminListSavedItems scan", err)
 		}
 		item.IsActive = item.ProductStatus == "active"
+		item.ImageURL = h.expandMediaPtr(item.ImageURL)
 		items = append(items, item)
 	}
 	return c.JSON(fiber.Map{"items": items, "count": len(items)})
