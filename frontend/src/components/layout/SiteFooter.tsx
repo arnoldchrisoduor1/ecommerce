@@ -240,7 +240,7 @@ function FooterCol({
 
 function InstagramIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
       <rect x="4" y="4" width="16" height="16" rx="4" />
       <circle cx="12" cy="12" r="3.5" />
       <circle cx="17" cy="7" r="0.8" fill="currentColor" stroke="none" />
@@ -250,7 +250,7 @@ function InstagramIcon() {
 
 function PinterestIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
       <circle cx="12" cy="12" r="8" />
       <path d="M10 18l1.2-5.2A2.8 2.8 0 1 1 14.5 9" strokeLinecap="round" />
     </svg>
@@ -259,7 +259,7 @@ function PinterestIcon() {
 
 function TikTokIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
       <path d="M14 6c.6 2.2 2.2 3.5 4 3.8V13c-1.6-.1-3-.7-4-1.6V16a5 5 0 1 1-5-5c.3 0 .7 0 1 .1V14a2 2 0 1 0 2 2V6h2z" />
     </svg>
   );

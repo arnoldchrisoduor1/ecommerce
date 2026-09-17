@@ -10,6 +10,10 @@ import { PurchaseTicker } from '@/components/urgency/PurchaseTicker';
 import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { DemoMascot } from '@/components/demo/DemoMascot';
+// Chrome chrome styles (nav/footer/stylist/cart). Pages that omit these imports
+// previously rendered raw SVG icons and unstyled FABs (verify/login/signup).
+import '@/app/landing.css';
+import '@/app/catalog.css';
 
 export async function StoreChrome({ children }: { children: React.ReactNode }) {
   let categories: Category[] = [];

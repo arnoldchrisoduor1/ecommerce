@@ -121,7 +121,7 @@ export function MainNav({ categories }: Props) {
 
 function AccountIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="12" cy="8" r="3.5" />
       <path d="M5 19c1.5-3 4-4.5 7-4.5S17.5 16 19 19" />
     </svg>
@@ -130,7 +130,7 @@ function AccountIcon() {
 
 function HeartIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M12 20s-7-4.5-7-9.5A4 4 0 0 1 12 7a4 4 0 0 1 7 3.5C19 15.5 12 20 12 20z" />
     </svg>
   );
@@ -138,7 +138,7 @@ function HeartIcon() {
 
 function BagIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M6 8h12l-1 12H7L6 8z" />
       <path d="M9 8a3 3 0 0 1 6 0" />
     </svg>

@@ -151,8 +151,19 @@ button {
 
 .verify-digit {
   width: 2.75rem;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
   text-align: center;
-  font-size: var(--font-display-sm);
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.verify-digit:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--color-fg);
 }
 
 .account__auth-row {

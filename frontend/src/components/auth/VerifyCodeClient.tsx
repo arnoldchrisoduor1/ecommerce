@@ -127,10 +127,10 @@ export function VerifyCodeClient() {
             {error}
           </p>
         ) : null}
-        <Button type="submit" variant="primary" disabled={busy || digits.some((d) => !d)}>
+        <Button type="submit" variant="primary" size="md" disabled={busy || digits.some((d) => !d)}>
           Verify
         </Button>
-        <Button type="button" variant="ghost" disabled={cooldown > 0} onClick={() => void resend()}>
+        <Button type="button" variant="ghost" size="md" disabled={cooldown > 0} onClick={() => void resend()}>
           {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
         </Button>
       </form>
