@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,8 +16,9 @@ import (
 )
 
 type stylistChatRequest struct {
-	Message   string `json:"message"`
-	SessionID string `json:"session_id"`
+	Message   string                   `json:"message"`
+	SessionID string                   `json:"session_id"`
+	History   []openrouter.ChatMessage `json:"history"`
 }
 
 type styleQuizRequest struct {
@@ -74,8 +76,14 @@ func (h *Handler) StylistChat(c *fiber.Ctx) error {
 	systemPrompt := stylistSystemPrompt(storeContext)
 	log.Printf("stylist system prompt (%d bytes): %s", len(systemPrompt), systemPrompt)
 
+	const stylistHistoryBudget = 12
+	history := trimStylistHistory(req.History, stylistHistoryBudget)
+	if req.SessionID != "" && len(history) == 0 {
+		history = h.loadStylistHistory(c.Context(), req.SessionID)
+	}
+
 	if stylistMockMode() {
-		return h.streamMockStylist(c, req.Message, storeContext)
+		return h.streamMockStylist(c, req.Message, storeContext, history, req.SessionID)
 	}
 
 	client, err := openrouter.NewFromEnv()
@@ -93,7 +101,7 @@ func (h *Handler) StylistChat(c *fiber.Ctx) error {
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		var full strings.Builder
-		usage, err := client.StreamChat(reqCtx, systemPrompt, req.Message, stylistMaxTokens, func(text string) error {
+		usage, err := client.StreamChatHistory(reqCtx, systemPrompt, history, req.Message, stylistMaxTokens, func(text string) error {
 			full.WriteString(text)
 			chunk, _ := json.Marshal(fiber.Map{"text": text})
 			if _, err := fmt.Fprintf(w, "data: %s\n\n", chunk); err != nil {
@@ -117,14 +125,24 @@ func (h *Handler) StylistChat(c *fiber.Ctx) error {
 			cost = usage.Cost
 		}
 		h.logAIUsage(reqCtx, userID, sessionID, "stylist", client.Model(), prompt, completion, cost)
+		if sessionID != "" {
+			next := append(append([]openrouter.ChatMessage{}, history...),
+				openrouter.ChatMessage{Role: "user", Content: req.Message},
+				openrouter.ChatMessage{Role: "assistant", Content: full.String()},
+			)
+			h.saveStylistHistory(reqCtx, sessionID, trimStylistHistory(next, stylistHistoryBudget))
+		}
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 		_ = w.Flush()
 	})
 	return nil
 }
 
-func (h *Handler) streamMockStylist(c *fiber.Ctx, userMessage, storeContext string) error {
+func (h *Handler) streamMockStylist(c *fiber.Ctx, userMessage, storeContext string, history []openrouter.ChatMessage, sessionID string) error {
 	reply := mockStylistReply(userMessage, storeContext)
+	if len(history) > 0 {
+		reply = "Following up on what we discussed — " + reply
+	}
 	log.Printf("stylist mock mode: zero API tokens used")
 
 	c.Set("Content-Type", "text/event-stream")
@@ -138,10 +156,66 @@ func (h *Handler) streamMockStylist(c *fiber.Ctx, userMessage, storeContext stri
 			_ = w.Flush()
 			time.Sleep(15 * time.Millisecond)
 		}
+		if sessionID != "" {
+			next := append(append([]openrouter.ChatMessage{}, history...),
+				openrouter.ChatMessage{Role: "user", Content: userMessage},
+				openrouter.ChatMessage{Role: "assistant", Content: reply},
+			)
+			h.saveStylistHistory(c.Context(), sessionID, trimStylistHistory(next, 12))
+		}
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 		_ = w.Flush()
 	})
 	return nil
+}
+
+func stylistHistoryKey(sessionID string) string {
+	return "stylist:history:" + sessionID
+}
+
+func trimStylistHistory(history []openrouter.ChatMessage, max int) []openrouter.ChatMessage {
+	if max <= 0 || len(history) == 0 {
+		return nil
+	}
+	out := make([]openrouter.ChatMessage, 0, len(history))
+	for _, m := range history {
+		role := strings.ToLower(strings.TrimSpace(m.Role))
+		content := strings.TrimSpace(m.Content)
+		if (role != "user" && role != "assistant") || content == "" {
+			continue
+		}
+		out = append(out, openrouter.ChatMessage{Role: role, Content: content})
+	}
+	if len(out) > max {
+		out = out[len(out)-max:]
+	}
+	return out
+}
+
+func (h *Handler) loadStylistHistory(ctx context.Context, sessionID string) []openrouter.ChatMessage {
+	if h.rdb == nil || sessionID == "" {
+		return nil
+	}
+	raw, err := h.rdb.Get(ctx, stylistHistoryKey(sessionID)).Bytes()
+	if err != nil || len(raw) == 0 {
+		return nil
+	}
+	var msgs []openrouter.ChatMessage
+	if err := json.Unmarshal(raw, &msgs); err != nil {
+		return nil
+	}
+	return trimStylistHistory(msgs, 12)
+}
+
+func (h *Handler) saveStylistHistory(ctx context.Context, sessionID string, history []openrouter.ChatMessage) {
+	if h.rdb == nil || sessionID == "" {
+		return
+	}
+	b, err := json.Marshal(history)
+	if err != nil {
+		return
+	}
+	_ = h.rdb.Set(ctx, stylistHistoryKey(sessionID), b, 24*time.Hour).Err()
 }
 
 // SubmitStyleQuiz stores answers in Redis and returns matching product picks.

@@ -61,7 +61,7 @@ export function AdminCustomersClient() {
 
   return (
     <AdminShell title="Customers">
-      <table className="admin-table" data-testid="customers-table">
+      <div className="admin-table-scroll"><table className="admin-table" data-testid="customers-table">
         <thead>
           <tr>
             <th>Name</th>
@@ -93,7 +93,7 @@ export function AdminCustomersClient() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </AdminShell>
   );
 }

@@ -137,7 +137,7 @@
   --float-back-top-size: 2.75rem; /* 44px hit target */
   --float-edge: var(--space-6);
   --presence-high-demand: 3; /* viewer count threshold for high-demand tag */
-  --presence-hide-below: 2; /* hide viewer badge when count below this */
+  --presence-hide-below: 1; /* hide viewer badge when count below this */
   --drawer-width: 24rem;
   --free-delivery-threshold: 3000; /* KES — free delivery progress target */
 

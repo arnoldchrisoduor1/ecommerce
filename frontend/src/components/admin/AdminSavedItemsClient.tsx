@@ -103,7 +103,7 @@ export function AdminSavedItemsClient() {
         <p className="ds-body">No saved items match.</p>
       ) : null}
       {items.length > 0 ? (
-        <table className="admin-table" data-testid="admin-saved-items">
+        <div className="admin-table-scroll"><table className="admin-table" data-testid="admin-saved-items">
           <thead>
             <tr>
               <th>Customer</th>
@@ -161,7 +161,7 @@ export function AdminSavedItemsClient() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       ) : null}
     </AdminShell>
   );

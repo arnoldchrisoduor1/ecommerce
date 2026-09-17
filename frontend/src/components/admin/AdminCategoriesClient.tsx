@@ -178,7 +178,7 @@ export function AdminCategoriesClient() {
         </p>
       ) : null}
 
-      <table className="admin-table" data-testid="categories-table">
+      <div className="admin-table-scroll"><table className="admin-table" data-testid="categories-table">
         <thead>
           <tr>
             <th>Order</th>
@@ -285,7 +285,7 @@ export function AdminCategoriesClient() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </AdminShell>
   );
 }

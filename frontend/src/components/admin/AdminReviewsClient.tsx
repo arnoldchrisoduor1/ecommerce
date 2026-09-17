@@ -41,7 +41,7 @@ export function AdminReviewsClient() {
 
   return (
     <AdminShell title="Reviews">
-      <table className="admin-table">
+      <div className="admin-table-scroll"><table className="admin-table">
         <thead>
           <tr>
             <th>Product</th>
@@ -82,7 +82,7 @@ export function AdminReviewsClient() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </AdminShell>
   );
 }

@@ -54,7 +54,8 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # coollabsio image has no curl; TCP probe is enough for depends_on.
+      test: ["CMD-SHELL", "timeout 3s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10

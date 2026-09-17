@@ -31,14 +31,22 @@ function ContactDetails({
   onPhoneAction,
   phoneCopied,
   coarsePointer,
+  showDemoNote = false,
 }: {
   onPhoneAction: () => void;
   phoneCopied: boolean;
   coarsePointer: boolean;
+  showDemoNote?: boolean;
 }) {
   const mailto = `mailto:${EMAIL}?subject=${encodeURIComponent('Demo store inquiry')}`;
   return (
     <>
+      {showDemoNote ? (
+        <p className="demo-contact__demo-note" data-testid="demo-contact-note">
+          This is a demo storefront showcasing available features. A real client
+          deployment would not include this notice.
+        </p>
+      ) : null}
       <p className="ds-label demo-contact__eyebrow">Developer contact</p>
       <a className="demo-contact__email" href={mailto} data-testid="demo-contact-email">
         {EMAIL}
@@ -216,6 +224,10 @@ export function DemoMascot() {
             <h2 id="demo-contact-title" className="ds-display ds-display--sm demo-contact__title">
               Built by Digital Wilderness
             </h2>
+            <p className="demo-contact__demo-note" data-testid="demo-contact-note">
+              This is a demo storefront showcasing available features. A real client
+              deployment would not include this notice.
+            </p>
             <p className="demo-contact__lead">Questions about this demo? Reach out directly.</p>
             <ContactDetails
               onPhoneAction={onPhoneAction}
@@ -250,6 +262,7 @@ export function DemoMascot() {
                 onPhoneAction={onPhoneAction}
                 phoneCopied={phoneCopied}
                 coarsePointer={coarsePointer}
+                showDemoNote
               />
             </div>
           ) : null}

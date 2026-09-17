@@ -65,7 +65,7 @@ WHERE p.slug IN (
 )
 ON CONFLICT (sku) DO NOTHING;
 
--- Product images not seeded; upload via admin panel.
+-- Product images intentionally not seeded — upload via admin; never wipe existing rows.
 
 INSERT INTO products (name, slug, description, base_price, is_bundle, status) VALUES
   ('Starter Essentials Bundle', 'starter-pack', 'Tee + tank combo.', 1899, true, 'active'),
@@ -90,18 +90,37 @@ INSERT INTO discounts (code, type, value, max_claims, is_active, context) VALUES
   ('TESTCODE10', 'percentage', 10, 100, true, 'general')
 ON CONFLICT (code) DO NOTHING;
 
+-- Hero: copy only — no media_url / media_urls / slides. Re-seed must not clobber admin uploads.
 INSERT INTO content_blocks (key, data, is_active) VALUES
-  ('hero', '{"headline":"New season basics","subheadline":"Soft tees, tanks, and layers built for everyday","cta_label":"Shop new arrivals","cta_url":"/shop","media_url":"/media/hero.svg","media_urls":["/media/hero.svg"],"media_interval_ms":5500}', true),
+  (
+    'hero',
+    '{"headline":"New season basics","subheadline":"Soft tees, tanks, and layers built for everyday","cta_label":"Shop new arrivals","cta_url":"/shop","media_interval_ms":5500}'::jsonb,
+    true
+  )
+ON CONFLICT (key) DO UPDATE SET
+  data = content_blocks.data
+    || jsonb_build_object(
+      'headline', EXCLUDED.data->>'headline',
+      'subheadline', EXCLUDED.data->>'subheadline',
+      'cta_label', EXCLUDED.data->>'cta_label',
+      'cta_url', EXCLUDED.data->>'cta_url',
+      'media_interval_ms', EXCLUDED.data->'media_interval_ms'
+    ),
+  is_active = EXCLUDED.is_active,
+  updated_at = now();
+
+INSERT INTO content_blocks (key, data, is_active) VALUES
   ('announcement_bar', '{"messages":["Free delivery over KES 3000","New drops every Thursday","Easy returns within 14 days"]}', true),
   ('footer', '{"columns":[{"title":"Shop","links":[{"label":"Tees","url":"/shop/tees"}]},{"title":"Support","links":[{"label":"FAQ","url":"/faq"}]}]}', true),
   ('delivery_estimate', '{"min_days":3,"max_days":8}', true)
 ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, is_active = EXCLUDED.is_active, updated_at = now();
 
+-- Highlights: no placeholder images (media_url required NOT NULL → empty until admin uploads).
 INSERT INTO highlights (title, media_url, link_url, position, is_active)
 SELECT v.title, v.media_url, v.link_url, v.position, true FROM (VALUES
-  ('New drop', '/media/highlight.svg', '/shop', 1),
-  ('Style guide', '/media/highlight.svg', '/blog', 2),
-  ('Bundles', '/media/highlight.svg', '/shop/bundles', 3)
+  ('New drop', '', '/shop', 1),
+  ('Style guide', '', '/blog', 2),
+  ('Bundles', '', '/shop/bundles', 3)
 ) AS v(title, media_url, link_url, position)
 WHERE NOT EXISTS (SELECT 1 FROM highlights h WHERE h.title = v.title);
 
@@ -193,9 +212,9 @@ INSERT INTO blog_posts (title, slug, body, cover_image, status, published_at) VA
 ON CONFLICT (slug) DO UPDATE SET
   title = EXCLUDED.title,
   body = EXCLUDED.body,
-  cover_image = EXCLUDED.cover_image,
   status = EXCLUDED.status,
   published_at = EXCLUDED.published_at;
+  -- cover_image intentionally omitted: never overwrite admin/uploaded covers on re-seed
 
 -- Demo customers + saved items (wishlist) for admin Saved items screen
 INSERT INTO customers (email, phone, full_name, is_guest)

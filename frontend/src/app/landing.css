@@ -107,6 +107,35 @@
   display: block;
 }
 
+.main-nav__avatar {
+  width: var(--btn-h-sm, 2rem);
+  height: var(--btn-h-sm, 2rem);
+  flex: 0 0 var(--btn-h-sm, 2rem);
+  border-radius: 50%;
+  background: var(--color-fg);
+  color: var(--color-on-fg, var(--color-bg));
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.main-nav__avatar:hover {
+  background: var(--color-fg-muted);
+}
+
+.main-nav__avatar:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.main-nav__avatar-text {
+  font-family: var(--font-family-body);
+  font-size: 0.65rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
 .main-nav__cart {
   border: 0;
   background: transparent;
@@ -1353,7 +1382,7 @@
   z-index: 1;
   width: min(100%, var(--modal-width-offer));
   max-height: min(70vh, var(--modal-max-height));
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
@@ -1363,6 +1392,9 @@
   flex-direction: column;
   gap: var(--space-3);
   animation: stylist-panel-in var(--duration-slow) var(--ease-out) both;
+  transition: width var(--duration-slow) var(--ease-out),
+    max-height var(--duration-slow) var(--ease-out),
+    max-width var(--duration-slow) var(--ease-out);
 }
 
 @keyframes stylist-panel-in {
@@ -1376,11 +1408,48 @@
   }
 }
 
-.stylist__close {
+.stylist-modal--expanded {
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.stylist__panel--expanded {
+  width: min(920px, 96vw);
+  max-width: 96vw;
+  max-height: min(92vh, 900px);
+  height: min(92vh, 900px);
+}
+
+.stylist__panel--expanded .stylist__messages {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+}
+
+.stylist__panel--expanded .stylist__form {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.stylist__panel--expanded .stylist-quiz {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.stylist__panel-actions {
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
   z-index: 2;
+  display: flex;
+  gap: var(--space-1);
+}
+
+.stylist__expand,
+.stylist__close {
+  position: static;
   width: var(--btn-h-lg);
   height: var(--btn-h-lg);
   min-width: 44px;
@@ -1396,19 +1465,90 @@
     background var(--duration-fast) var(--ease-out);
 }
 
+.stylist__expand svg,
 .stylist__close svg {
   width: var(--icon-md);
   height: var(--icon-md);
 }
 
+.stylist__expand:hover,
 .stylist__close:hover {
   color: var(--color-fg);
   background: var(--color-accent-muted);
 }
 
+.stylist__expand:focus-visible,
 .stylist__close:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+.stylist__product-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.stylist-product-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.stylist-product-card__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.stylist-product-card__thumb {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.stylist-product-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.stylist-product-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stylist-product-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .stylist__panel--expanded {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border: 0;
+  }
+
+  .stylist-modal--expanded {
+    padding: 0;
+  }
 }
 
 .stylist__eyebrow {
@@ -1424,6 +1564,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .stylist-warmup {
@@ -1468,6 +1609,8 @@
 .stylist__form {
   display: flex;
   gap: var(--space-2);
+  flex-shrink: 0;
+  align-items: center;
 }
 
 .stylist__input {

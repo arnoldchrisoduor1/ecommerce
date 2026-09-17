@@ -16,7 +16,7 @@ type Props = {
   overlay?: boolean;
 };
 
-const HIDE_BELOW = 2;
+const HIDE_BELOW = 1;
 
 function hideBelowThreshold(): number {
   if (typeof window === 'undefined') return HIDE_BELOW;
@@ -55,8 +55,14 @@ export function ViewerBadge({
 
   useEffect(() => {
     if (!inBatchMode || !productId) return;
-    setCount(batchCounts[productId] ?? 0);
-  }, [inBatchMode, batchCounts, productId]);
+    const batch = batchCounts[productId] ?? 0;
+    if (!inView) {
+      setCount(batch);
+      return;
+    }
+    // Keep optimistic self-count until the next batch poll catches up.
+    setCount((c) => Math.max(c, batch));
+  }, [inBatchMode, batchCounts, productId, inView]);
 
   // Listing cards: register presence only while the card is on-screen.
   // Without this, only PDP heartbeats — shop/home stay at 0 under hide-below.
@@ -83,6 +89,8 @@ export function ViewerBadge({
           await apiSend(`/presence/products/${productId}/heartbeat`, 'POST', {
             session_id: sessionId,
           });
+          // Self counts immediately — batch poll may lag one tick.
+          setCount((c) => Math.max(c, 1));
         } catch {
           /* presence optional */
         }

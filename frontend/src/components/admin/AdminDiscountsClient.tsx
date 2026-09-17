@@ -68,7 +68,7 @@ export function AdminDiscountsListClient() {
           New discount
         </Button>
       </Link>
-      <table className="admin-table" data-testid="discounts-table">
+      <div className="admin-table-scroll"><table className="admin-table" data-testid="discounts-table">
         <thead>
           <tr>
             <th>Code</th>
@@ -117,7 +117,7 @@ export function AdminDiscountsListClient() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </AdminShell>
   );
 }

@@ -107,7 +107,18 @@ export function AdminShell({
   useEffect(() => {
     try {
       const stored = localStorage.getItem(SIDEBAR_KEY);
-      if (stored === '0') setOpen(false);
+      if (stored === '0') {
+        setOpen(false);
+        return;
+      }
+      if (stored === '1') {
+        setOpen(true);
+        return;
+      }
+      /* First visit: closed drawer on narrow viewports so layout never fights the page width. */
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        setOpen(false);
+      }
     } catch {
       /* ignore */
     }

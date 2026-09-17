@@ -67,10 +67,29 @@ func IsAnthropicModel(model string) bool {
 
 func (c *Client) Model() string { return c.model }
 
+// ChatMessage is one turn for multi-turn stylist conversations.
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // StreamChat streams assistant text. Retries once on 5xx or transport timeout.
+// history may include prior user/assistant turns; userMessage is the latest user turn.
 func (c *Client) StreamChat(
 	ctx context.Context,
 	systemPrompt, userMessage string,
+	maxTokens int,
+	onChunk func(text string) error,
+) (*Usage, error) {
+	return c.StreamChatHistory(ctx, systemPrompt, nil, userMessage, maxTokens, onChunk)
+}
+
+// StreamChatHistory streams with prior conversation turns (user/assistant only).
+func (c *Client) StreamChatHistory(
+	ctx context.Context,
+	systemPrompt string,
+	history []ChatMessage,
+	userMessage string,
 	maxTokens int,
 	onChunk func(text string) error,
 ) (*Usage, error) {
@@ -79,7 +98,7 @@ func (c *Client) StreamChat(
 		if attempt > 0 {
 			time.Sleep(500 * time.Millisecond)
 		}
-		usage, err := c.streamOnce(ctx, systemPrompt, userMessage, maxTokens, onChunk)
+		usage, err := c.streamOnce(ctx, systemPrompt, history, userMessage, maxTokens, onChunk)
 		if err == nil {
 			return usage, nil
 		}
@@ -103,16 +122,30 @@ func retryable(err error) bool {
 
 func (c *Client) streamOnce(
 	ctx context.Context,
-	systemPrompt, userMessage string,
+	systemPrompt string,
+	history []ChatMessage,
+	userMessage string,
 	maxTokens int,
 	onChunk func(text string) error,
 ) (*Usage, error) {
+	msgs := make([]map[string]string, 0, len(history)+2)
+	msgs = append(msgs, map[string]string{"role": "system", "content": systemPrompt})
+	for _, m := range history {
+		role := strings.ToLower(strings.TrimSpace(m.Role))
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		content := strings.TrimSpace(m.Content)
+		if content == "" {
+			continue
+		}
+		msgs = append(msgs, map[string]string{"role": role, "content": content})
+	}
+	msgs = append(msgs, map[string]string{"role": "user", "content": userMessage})
+
 	payload := map[string]any{
-		"model": c.model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userMessage},
-		},
+		"model":    c.model,
+		"messages": msgs,
 		"max_tokens": maxTokens,
 		"stream":     true,
 		"stream_options": map[string]any{

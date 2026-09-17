@@ -331,7 +331,7 @@ export function AdminOverviewClient() {
         {visitedPages.length === 0 ? (
           <p className="ds-body">No page views in this range yet.</p>
         ) : (
-          <table className="admin-table" data-testid="most-visited-table">
+          <div className="admin-table-scroll"><table className="admin-table" data-testid="most-visited-table">
             <thead>
               <tr>
                 <th>#</th>
@@ -354,7 +354,7 @@ export function AdminOverviewClient() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
 
@@ -385,7 +385,7 @@ export function AdminOverviewClient() {
         {mostViewed.length === 0 ? (
           <p className="ds-body">No product views in this range yet.</p>
         ) : (
-          <table className="admin-table" data-testid="most-viewed-table">
+          <div className="admin-table-scroll"><table className="admin-table" data-testid="most-viewed-table">
             <thead>
               <tr>
                 <th>#</th>
@@ -424,7 +424,7 @@ export function AdminOverviewClient() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
 
@@ -446,7 +446,7 @@ export function AdminOverviewClient() {
         {lowStock.length === 0 ? (
           <p className="ds-body">No variants at or below threshold.</p>
         ) : (
-          <table className="admin-table">
+          <div className="admin-table-scroll"><table className="admin-table">
             <thead>
               <tr>
                 <th>Product</th>
@@ -465,7 +465,7 @@ export function AdminOverviewClient() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
 
@@ -500,7 +500,7 @@ export function AdminOverviewClient() {
         ) : viewers.length === 0 ? (
           <p className="ds-body">No viewers in this range.</p>
         ) : (
-          <table className="admin-table" data-testid="product-viewers-table">
+          <div className="admin-table-scroll"><table className="admin-table" data-testid="product-viewers-table">
             <thead>
               <tr>
                 <th>Viewer</th>
@@ -519,7 +519,7 @@ export function AdminOverviewClient() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
         <div className="admin-viewers-pager">
           <Button

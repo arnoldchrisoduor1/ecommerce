@@ -293,7 +293,7 @@ export function AdminAiUsageClient() {
 
       <section className="admin-panel">
         <h2>By feature &amp; model</h2>
-        <table className="admin-table">
+        <div className="admin-table-scroll"><table className="admin-table">
           <thead>
             <tr>
               <th>Feature</th>
@@ -322,7 +322,7 @@ export function AdminAiUsageClient() {
               ))
             )}
           </tbody>
-        </table>
+        </table></div>
       </section>
 
       <section className="admin-panel">
@@ -351,7 +351,7 @@ export function AdminAiUsageClient() {
             Apply
           </Button>
         </div>
-        <table className="admin-table">
+        <div className="admin-table-scroll"><table className="admin-table">
           <thead>
             <tr>
               <th>User / session</th>
@@ -400,7 +400,7 @@ export function AdminAiUsageClient() {
               ))
             )}
           </tbody>
-        </table>
+        </table></div>
       </section>
     </AdminShell>
   );

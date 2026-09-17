@@ -27,6 +27,7 @@ type CartContextValue = {
   closeCart: () => void;
   addToCart: (variantId: string, quantity?: number) => Promise<void>;
   updateQuantity: (itemId: string, quantity: number) => Promise<void>;
+  removeItem: (itemId: string) => Promise<void>;
   refreshCart: () => Promise<void>;
   ensureCartWithItem: () => Promise<Cart>;
   sessionId: string;
@@ -108,6 +109,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     async (itemId: string, quantity: number) => {
       const id = localStorage.getItem(CART_KEY);
       if (!id) return;
+      if (quantity <= 0) {
+        const next = await apiSend<Cart>(`/cart/${id}/items/${itemId}`, 'DELETE');
+        setCart(next);
+        return;
+      }
       const next = await apiSend<Cart>(`/cart/${id}/items/${itemId}`, 'PATCH', {
         quantity,
       });
@@ -115,6 +121,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const removeItem = useCallback(async (itemId: string) => {
+    const id = localStorage.getItem(CART_KEY);
+    if (!id) return;
+    const next = await apiSend<Cart>(`/cart/${id}/items/${itemId}`, 'DELETE');
+    setCart(next);
+  }, []);
 
   /** For /cart and /checkout e2e when no persisted bag exists yet. */
   const ensureCartWithItem = useCallback(async () => {
@@ -165,6 +178,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       closeCart: () => setOpen(false),
       addToCart,
       updateQuantity,
+      removeItem,
       refreshCart,
       ensureCartWithItem,
       sessionId,
@@ -175,6 +189,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       open,
       addToCart,
       updateQuantity,
+      removeItem,
       refreshCart,
       ensureCartWithItem,
       sessionId,

@@ -278,7 +278,7 @@ export function AdminNewsletterClient() {
           {busy ? 'Loading…' : `${total} result${total === 1 ? '' : 's'}`}
         </div>
 
-        <table className="admin-table" data-testid="newsletter-table">
+        <div className="admin-table-scroll"><table className="admin-table" data-testid="newsletter-table">
           <thead>
             <tr>
               <th>Email</th>
@@ -322,7 +322,7 @@ export function AdminNewsletterClient() {
               ))
             )}
           </tbody>
-        </table>
+        </table></div>
 
         <div className="admin-newsletter__pager">
           <button

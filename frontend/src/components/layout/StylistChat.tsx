@@ -9,7 +9,10 @@ import { formatKes } from '@/lib/format';
 import {
   AI_UNAVAILABLE_MESSAGE,
   fetchStylistStatus,
-  slugsInText,
+  loadPersistedStylistMessages,
+  persistStylistMessages,
+  resolveProductSlugs,
+  stripProductMarkers,
   StylistBlockedError,
   streamStylistChat,
   submitStyleQuiz,
@@ -54,7 +57,13 @@ type ChatMessage = {
   slugs?: string[];
 };
 
-type SlugMeta = { slug: string; name: string; variantId: string };
+type SlugMeta = {
+  slug: string;
+  name: string;
+  variantId: string;
+  price: number;
+  imageUrl?: string;
+};
 
 export function StyleQuizFlow({ onDone }: { onDone?: () => void }) {
   const { sessionId, addToCart } = useCart();
@@ -164,6 +173,39 @@ export function StyleQuizFlow({ onDone }: { onDone?: () => void }) {
   );
 }
 
+function StylistProductCard({
+  meta,
+  onAdd,
+}: {
+  meta: SlugMeta;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="stylist-product-card" data-testid="stylist-product-card">
+      <Link href={`/product/${meta.slug}`} className="stylist-product-card__link">
+        <span className="stylist-product-card__thumb" aria-hidden={!meta.imageUrl}>
+          {meta.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={meta.imageUrl} alt="" width={56} height={56} />
+          ) : null}
+        </span>
+        <span className="stylist-product-card__meta">
+          <span className="ds-body--sm stylist-product-card__name">{meta.name}</span>
+          <span className="ds-caption">{formatKes(meta.price)}</span>
+        </span>
+      </Link>
+      <Button
+        variant="secondary"
+        size="sm"
+        data-testid="stylist-add-to-bag"
+        onClick={onAdd}
+      >
+        Add
+      </Button>
+    </div>
+  );
+}
+
 export function StylistChatPanel({
   configured,
 }: {
@@ -173,29 +215,69 @@ export function StylistChatPanel({
   const [mode, setMode] = useState<'chat' | 'quiz'>('chat');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [slugCatalog, setSlugCatalog] = useState<SlugMeta[]>([]);
   const messagesRef = useRef<HTMLDivElement>(null);
   const chatDisabled = configured === false || busy;
 
   useEffect(() => {
+    setMessages(loadPersistedStylistMessages());
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    persistStylistMessages(
+      messages
+        .filter((m) => !m.streaming)
+        .map(({ id, role, text, slugs }) => ({ id, role, text, slugs })),
+    );
+  }, [messages, hydrated]);
+
+  useEffect(() => {
     if (configured !== true) return;
+    let cancelled = false;
     void apiGet<{ products: ProductListItem[] }>(
       '/catalog/products?sort=latest&page_size=40',
     ).then(async (res) => {
-      const metas: SlugMeta[] = [];
-      for (const p of res.products.filter((x) => !x.is_bundle).slice(0, 20)) {
-        try {
-          const detail = await apiGet<ProductDetail>(`/catalog/products/${p.slug}`);
-          const variant =
-            detail.variants.find((v) => v.stock_qty > 0) ?? detail.variants[0];
-          if (variant) metas.push({ slug: p.slug, name: p.name, variantId: variant.id });
-        } catch {
-          /* skip */
-        }
-      }
-      setSlugCatalog(metas);
+      const list = res.products.filter((x) => !x.is_bundle).slice(0, 24);
+      // Immediate name/slug/price/image so suggestion cards work before variant fetch finishes.
+      const quick: SlugMeta[] = list.map((p) => ({
+        slug: p.slug,
+        name: p.name,
+        variantId: '',
+        price: p.sale_price ?? p.base_price,
+        imageUrl: p.primary_image?.url,
+      }));
+      if (!cancelled) setSlugCatalog(quick);
+
+      const enriched: SlugMeta[] = [];
+      await Promise.all(
+        list.map(async (p) => {
+          try {
+            const detail = await apiGet<ProductDetail>(`/catalog/products/${p.slug}`);
+            const variant =
+              detail.variants.find((v) => v.stock_qty > 0) ?? detail.variants[0];
+            if (variant) {
+              enriched.push({
+                slug: p.slug,
+                name: p.name,
+                variantId: variant.id,
+                price: p.sale_price ?? p.base_price,
+                imageUrl: p.primary_image?.url,
+              });
+            }
+          } catch {
+            /* skip */
+          }
+        }),
+      );
+      if (!cancelled && enriched.length > 0) setSlugCatalog(enriched);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [configured]);
 
   useEffect(() => {
@@ -203,8 +285,22 @@ export function StylistChatPanel({
   }, [messages]);
 
   async function addBySlug(slug: string) {
-    const meta = slugCatalog.find((s) => s.slug === slug);
+    let meta = slugCatalog.find((s) => s.slug === slug);
     if (!meta) return;
+    if (!meta.variantId) {
+      try {
+        const detail = await apiGet<ProductDetail>(`/catalog/products/${slug}`);
+        const variant =
+          detail.variants.find((v) => v.stock_qty > 0) ?? detail.variants[0];
+        if (!variant) return;
+        meta = { ...meta, variantId: variant.id };
+        setSlugCatalog((prev) =>
+          prev.map((s) => (s.slug === slug ? meta! : s)),
+        );
+      } catch {
+        return;
+      }
+    }
     await addToCart(meta.variantId, 1);
   }
 
@@ -214,6 +310,9 @@ export function StylistChatPanel({
     if (!text || chatDisabled || configured !== true) return;
     setInput('');
     const userId = crypto.randomUUID();
+    const prior = messages
+      .filter((m) => !m.streaming && m.text)
+      .map((m) => ({ role: m.role, content: m.text }));
     setMessages((m) => [...m, { id: userId, role: 'user', text }]);
     setBusy(true);
 
@@ -225,18 +324,19 @@ export function StylistChatPanel({
 
     try {
       let full = '';
-      await streamStylistChat(text, (chunk) => {
-        full += chunk;
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === assistantId ? { ...msg, text: full } : msg,
-          ),
-        );
-      }, sessionId);
-      const slugs = slugsInText(
-        full,
-        slugCatalog.map((s) => s.slug),
+      await streamStylistChat(
+        text,
+        (chunk) => {
+          full += chunk;
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === assistantId ? { ...msg, text: full } : msg,
+            ),
+          );
+        },
+        { sessionId, history: prior },
       );
+      const slugs = resolveProductSlugs(full, slugCatalog);
       setMessages((m) =>
         m.map((msg) =>
           msg.id === assistantId
@@ -323,24 +423,23 @@ export function StylistChatPanel({
                     m.role === 'user' ? 'stylist-chat-message-user' : 'stylist-chat-message'
                   }
                 >
-                  <p className="ds-body--sm">{m.text}</p>
+                  <p className="ds-body--sm">
+                    {m.role === 'assistant' ? stripProductMarkers(m.text) : m.text}
+                  </p>
                   {m.streaming ? (
                     <span className="stylist__cursor" data-testid="stylist-chat-streaming" />
                   ) : null}
                   {m.slugs && m.slugs.length > 0 ? (
-                    <div className="stylist__actions">
+                    <div className="stylist__product-cards">
                       {m.slugs.map((slug) => {
                         const meta = slugCatalog.find((s) => s.slug === slug);
+                        if (!meta) return null;
                         return (
-                          <Button
+                          <StylistProductCard
                             key={slug}
-                            variant="secondary"
-                            size="sm"
-                            data-testid="stylist-add-to-bag"
-                            onClick={() => void addBySlug(slug)}
-                          >
-                            Add {meta?.name ?? slug}
-                          </Button>
+                            meta={meta}
+                            onAdd={() => void addBySlug(slug)}
+                          />
                         );
                       })}
                     </div>
@@ -385,10 +484,15 @@ export function StylistChatPanel({
 
 export function StylistChat() {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const scrollPreserveRef = useRef(0);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    setExpanded(false);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -402,7 +506,10 @@ export function StylistChat() {
         if (!cancelled) setConfigured(false);
       });
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') {
+        if (expanded) setExpanded(false);
+        else close();
+      }
     };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
@@ -414,7 +521,24 @@ export function StylistChat() {
       document.body.style.overflow = prev;
       window.clearTimeout(t);
     };
-  }, [open, close]);
+  }, [open, close, expanded]);
+
+  function toggleExpand() {
+    const el = document.querySelector('[data-testid="stylist-chat-messages"]');
+    if (el) scrollPreserveRef.current = el.scrollTop;
+    setExpanded((v) => !v);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const id = window.requestAnimationFrame(() => {
+      const el = document.querySelector(
+        '[data-testid="stylist-chat-messages"]',
+      ) as HTMLElement | null;
+      if (el) el.scrollTop = scrollPreserveRef.current;
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [expanded, open]);
 
   return (
     <div className="stylist">
@@ -435,7 +559,7 @@ export function StylistChat() {
 
       {open ? (
         <div
-          className="stylist-modal"
+          className={`stylist-modal${expanded ? ' stylist-modal--expanded' : ''}`}
           role="presentation"
           data-testid="stylist-modal-root"
         >
@@ -448,22 +572,34 @@ export function StylistChat() {
           />
           <div
             id="stylist-chat-panel"
-            className="stylist__panel"
+            className={`stylist__panel${expanded ? ' stylist__panel--expanded' : ''}`}
             data-testid="stylist-chat-panel"
+            data-expanded={expanded ? 'true' : 'false'}
             role="dialog"
             aria-modal="true"
             aria-label="AI stylist chat"
           >
-            <button
-              ref={closeBtnRef}
-              type="button"
-              className="stylist__close"
-              aria-label="Close"
-              data-testid="stylist-modal-close"
-              onClick={close}
-            >
-              <CloseIcon />
-            </button>
+            <div className="stylist__panel-actions">
+              <button
+                type="button"
+                className="stylist__expand"
+                aria-label={expanded ? 'Collapse chat' : 'Expand chat'}
+                data-testid="stylist-expand"
+                onClick={toggleExpand}
+              >
+                {expanded ? <CollapseIcon /> : <ExpandIcon />}
+              </button>
+              <button
+                ref={closeBtnRef}
+                type="button"
+                className="stylist__close"
+                aria-label="Close"
+                data-testid="stylist-modal-close"
+                onClick={close}
+              >
+                <CloseIcon />
+              </button>
+            </div>
             <p className="ds-label stylist__eyebrow">Shop with stylist</p>
             <StylistChatPanel configured={configured} />
           </div>
@@ -475,7 +611,7 @@ export function StylistChat() {
 
 function StylistSparkIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
       <path d="M12 3v3M12 18v3M3 12h3M18 12h3" strokeLinecap="round" />
       <path d="M6.2 6.2l2.1 2.1M15.7 15.7l2.1 2.1M17.8 6.2l-2.1 2.1M8.3 15.7l-2.1 2.1" strokeLinecap="round" />
       <circle cx="12" cy="12" r="3.25" />
@@ -485,8 +621,24 @@ function StylistSparkIcon() {
 
 function CloseIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
       <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+      <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CollapseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+      <path d="M9 9H4V4M15 9h5V4M9 15H4v5M15 15h5v5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

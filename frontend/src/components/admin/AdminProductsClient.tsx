@@ -85,7 +85,7 @@ export function AdminProductsListClient() {
           New product
         </Button>
       </Link>
-      <table className="admin-table">
+      <div className="admin-table-scroll"><table className="admin-table">
         <thead>
           <tr>
             <th>Image</th>
@@ -121,7 +121,7 @@ export function AdminProductsListClient() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </AdminShell>
   );
 }
@@ -653,7 +653,7 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
             {variants.length === 0 ? (
               <p className="ds-caption">No variants yet.</p>
             ) : (
-              <table className="admin-table">
+              <div className="admin-table-scroll"><table className="admin-table">
                 <thead>
                   <tr>
                     <th>SKU</th>
@@ -740,7 +740,7 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
 
             <form className="admin-inline-form" style={{ marginTop: 'var(--space-4)' }} onSubmit={(e) => void addVariant(e)}>

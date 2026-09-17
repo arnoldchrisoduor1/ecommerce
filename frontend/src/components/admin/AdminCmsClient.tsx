@@ -206,7 +206,7 @@ export function AdminAnnouncementEditorClient() {
           </Button>
         </div>
 
-        <table className="admin-table" data-testid="announce-messages-table">
+        <div className="admin-table-scroll"><table className="admin-table" data-testid="announce-messages-table">
           <thead>
             <tr>
               <th>Order</th>
@@ -304,7 +304,7 @@ export function AdminAnnouncementEditorClient() {
               ))
             )}
           </tbody>
-        </table>
+        </table></div>
 
         <Button type="submit" variant="primary" size="md" disabled={busy} data-testid="save-content-block">
           Save interval
@@ -1011,7 +1011,7 @@ export function AdminBlogClient() {
             </select>
           </div>
         </div>
-        <table className="admin-table" data-testid="blog-analytics-table">
+        <div className="admin-table-scroll"><table className="admin-table" data-testid="blog-analytics-table">
           <thead>
             <tr>
               <th>Post</th>
@@ -1034,7 +1034,7 @@ export function AdminBlogClient() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </section>
 
       <form className="admin-form" onSubmit={(e) => void onSubmit(e)}>
@@ -1109,7 +1109,7 @@ export function AdminBlogClient() {
           ) : null}
         </div>
       </form>
-      <table className="admin-table">
+      <div className="admin-table-scroll"><table className="admin-table">
         <thead>
           <tr>
             <th>Title</th>
@@ -1141,7 +1141,7 @@ export function AdminBlogClient() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </AdminShell>
   );
 }

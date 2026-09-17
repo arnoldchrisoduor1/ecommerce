@@ -11,7 +11,7 @@ type Props = {
 };
 
 export function CartContents({ embedded = false }: Props) {
-  const { cart, updateQuantity, closeCart } = useCart();
+  const { cart, updateQuantity, removeItem, closeCart } = useCart();
   const threshold = freeDeliveryThreshold();
   const subtotal = cart?.subtotal ?? 0;
   const remaining = Math.max(0, threshold - subtotal);
@@ -36,7 +36,6 @@ export function CartContents({ embedded = false }: Props) {
                     className="cart-qty__btn"
                     data-testid="cart-item-decrement"
                     aria-label="Decrease quantity"
-                    disabled={item.quantity <= 1}
                     onClick={() => void updateQuantity(item.id, item.quantity - 1)}
                   >
                     −
@@ -50,6 +49,15 @@ export function CartContents({ embedded = false }: Props) {
                     onClick={() => void updateQuantity(item.id, item.quantity + 1)}
                   >
                     +
+                  </button>
+                  <button
+                    type="button"
+                    className="cart-qty__remove"
+                    data-testid="cart-item-remove"
+                    aria-label={`Remove ${item.product_name}`}
+                    onClick={() => void removeItem(item.id)}
+                  >
+                    Remove
                   </button>
                 </div>
               </div>

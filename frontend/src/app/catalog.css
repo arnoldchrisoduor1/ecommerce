@@ -768,6 +768,29 @@
   text-align: center;
 }
 
+.cart-qty__remove {
+  margin-left: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: var(--font-body-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  min-height: 44px;
+}
+
+.cart-qty__remove:hover {
+  color: var(--color-danger, #b91c1c);
+}
+
+.cart-qty__remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .cart-delivery {
   display: flex;
   flex-direction: column;

@@ -70,6 +70,16 @@
   line-height: var(--leading-body);
 }
 
+.demo-contact__demo-note {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-subtle);
+  border-left: 3px solid var(--color-accent, currentColor);
+  color: var(--color-fg);
+  font-size: var(--font-body-sm);
+  line-height: 1.45;
+}
+
 .demo-contact__email,
 .demo-contact__phone {
   display: block;

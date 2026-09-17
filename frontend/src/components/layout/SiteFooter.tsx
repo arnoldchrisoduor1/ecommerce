@@ -23,6 +23,11 @@ const COMPANY = [
   { label: 'Blog', href: '/blog' },
 ];
 
+const DEMO_COMPANY =
+  process.env.NEXT_PUBLIC_APP_MODE === 'demo'
+    ? [...COMPANY, { label: 'Features', href: '/features' }]
+    : COMPANY;
+
 export function SiteFooter({ categories = [] }: Props) {
   const year = new Date().getFullYear();
   const shop = categories.slice(0, 6);
@@ -106,7 +111,7 @@ export function SiteFooter({ categories = [] }: Props) {
             title="Company"
             open={openSection === 'company'}
             onToggle={() => toggle('company')}
-            links={COMPANY}
+            links={DEMO_COMPANY}
           />
         </div>
 

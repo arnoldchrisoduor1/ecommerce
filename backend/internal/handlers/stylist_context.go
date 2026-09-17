@@ -271,7 +271,9 @@ func (h *Handler) loadStorePolicies(c *fiber.Ctx) (string, error) {
 }
 
 func stylistSystemPrompt(storeContext string) string {
-	return `You are a fashion stylist for a women's basics storefront. Recommend ONLY products from the catalog below. Mention product names and slugs. Keep answers concise and actionable.
+	return `You are a fashion stylist for a women's basics storefront. Recommend ONLY products from the catalog below. Keep answers concise and actionable.
+
+When you recommend a specific catalog product, append a marker on its own: [[product:SLUG]] using the exact slug from the catalog. Never invent slugs or products that are not listed. If nothing in the catalog fits, say so clearly without markers.
 
 Privacy: You have NO access to any customer's order history, account details, addresses, or analytics about other shoppers. If asked about personal orders, what someone else bought, or private account data, politely decline in a friendly way and suggest they check their account page or contact support — do not invent or guess private information.
 
@@ -284,6 +286,10 @@ func mockStylistReply(userMessage, storeContext string) string {
 		strings.Contains(lower, "who else") || strings.Contains(lower, "my account") {
 		return "I don't have access to order history or account details — that's private to your account. Check Your Orders in your profile, or contact support for help."
 	}
+	if strings.Contains(lower, "spacesuit") || strings.Contains(lower, "not in stock") ||
+		strings.Contains(lower, "unicorn") || strings.Contains(lower, "jetpack") {
+		return "I don't see anything like that in our current catalog — we focus on everyday women's basics. Want a soft tee or tank instead?"
+	}
 
 	reply := strings.Builder{}
 	reply.WriteString("Here are a few picks from our current catalog:\n")
@@ -291,9 +297,16 @@ func mockStylistReply(userMessage, storeContext string) string {
 	picks := 0
 	for _, line := range lines {
 		if strings.HasPrefix(line, "- ") && strings.Contains(line, " | ") && picks < 3 {
-			reply.WriteString(line)
-			reply.WriteString("\n")
-			picks++
+			parts := strings.Split(line, " | ")
+			if len(parts) >= 2 {
+				name := strings.TrimPrefix(parts[0], "- ")
+				slug := strings.TrimSpace(parts[1])
+				reply.WriteString(name)
+				reply.WriteString(" — great everyday piece. [[product:")
+				reply.WriteString(slug)
+				reply.WriteString("]]\n")
+				picks++
+			}
 		}
 	}
 	if strings.Contains(storeContext, "Active promotions:") {
