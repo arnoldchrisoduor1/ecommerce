@@ -5,6 +5,7 @@ import { Badge, Button, Modal } from '@/components/ui';
 import { ViewerBadge } from '@/components/product/ViewerBadge';
 import { ProductCard } from '@/components/product/ProductCard';
 import { ProductPresenceProvider } from '@/components/product/ProductPresenceProvider';
+import { TryWithAI } from '@/components/product/TryWithAI';
 import { useCart } from '@/components/cart/CartProvider';
 import { useAuth } from '@/components/auth/AuthProvider';
 import type { ProductDetail, ProductListItem, ProductReview } from '@/lib/api';
@@ -272,6 +273,10 @@ export function PdpClient({ product, related, reviews }: Props) {
               <Badge variant="stock-ok">In stock</Badge>
             )}
           </p>
+        ) : null}
+
+        {!product.is_bundle ? (
+          <TryWithAI productId={product.id} productName={product.name} />
         ) : null}
 
         <div className="pdp__actions">

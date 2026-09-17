@@ -27,7 +27,7 @@ export function ProductShelf({ title, products, seeAllHref = '/shop' }: Props) {
       <ProductPresenceProvider productIds={products.map((p) => p.id)}>
         <div className="shelf__grid">
           {products.map((p) => (
-            <ProductCard key={p.id} product={p} />
+            <ProductCard key={p.id} product={p} showQuickView />
           ))}
         </div>
       </ProductPresenceProvider>

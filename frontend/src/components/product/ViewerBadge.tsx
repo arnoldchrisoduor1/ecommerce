@@ -50,14 +50,49 @@ export function ViewerBadge({
   const [display, setDisplay] = useState(0);
   const [anim, setAnim] = useState(false);
   const prev = useRef(0);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const [inView, setInView] = useState(!overlay);
 
   useEffect(() => {
     if (!inBatchMode || !productId) return;
     setCount(batchCounts[productId] ?? 0);
   }, [inBatchMode, batchCounts, productId]);
 
+  // Listing cards: register presence only while the card is on-screen.
+  // Without this, only PDP heartbeats — shop/home stay at 0 under hide-below.
   useEffect(() => {
-    if (inBatchMode || !productId) return;
+    if (!inBatchMode || !productId || !sessionId) return;
+    const el = rootRef.current?.closest('.product-card') ?? rootRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { rootMargin: '0px', threshold: 0.35 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [inBatchMode, productId, sessionId]);
+
+  useEffect(() => {
+    if (inBatchMode) {
+      if (!productId || !sessionId || !inView) return;
+      async function beat() {
+        try {
+          await apiSend(`/presence/products/${productId}/heartbeat`, 'POST', {
+            session_id: sessionId,
+          });
+        } catch {
+          /* presence optional */
+        }
+      }
+      void beat();
+      const id = window.setInterval(beat, 15000);
+      return () => window.clearInterval(id);
+    }
+
+    if (!productId) return;
     let cancelled = false;
 
     async function tick() {
@@ -86,7 +121,7 @@ export function ViewerBadge({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [productId, sessionId, heartbeat, inBatchMode]);
+  }, [productId, sessionId, heartbeat, inBatchMode, inView]);
 
   useEffect(() => {
     if (count === prev.current) {
@@ -102,7 +137,17 @@ export function ViewerBadge({
     return () => window.clearTimeout(t);
   }, [count]);
 
-  if (count < hideBelowThreshold()) return null;
+  if (count < hideBelowThreshold()) {
+    return (
+      <span
+        ref={(n) => {
+          rootRef.current = n;
+        }}
+        className="viewer-badge-anchor"
+        aria-hidden="true"
+      />
+    );
+  }
 
   const high = showHighDemand && count >= highDemandThreshold();
   const label = `${display} viewing now`;
@@ -110,6 +155,9 @@ export function ViewerBadge({
   if (overlay) {
     return (
       <div
+        ref={(n) => {
+          rootRef.current = n;
+        }}
         className="viewer-overlay"
         data-testid="pdp-viewer-count"
         role="status"
@@ -133,7 +181,12 @@ export function ViewerBadge({
   }
 
   return (
-    <span className="viewer-badge-wrap">
+    <span
+      ref={(n) => {
+        rootRef.current = n;
+      }}
+      className="viewer-badge-wrap"
+    >
       <Badge
         variant="presence"
         data-testid={testId}

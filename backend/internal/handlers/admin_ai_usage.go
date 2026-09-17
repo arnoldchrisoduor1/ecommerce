@@ -26,6 +26,7 @@ type adminAIUsageSummary struct {
 	CreditsRaw            any      `json:"credits_raw,omitempty"`
 	KeyInfoError          string   `json:"key_info_error,omitempty"`
 	CreditsError          string   `json:"credits_error,omitempty"`
+	UsageLogError         string   `json:"usage_log_error,omitempty"`
 }
 
 func (h *Handler) AdminAIUsageSummary(c *fiber.Ctx) error {
@@ -33,27 +34,30 @@ func (h *Handler) AdminAIUsageSummary(c *fiber.Ctx) error {
 
 	summary := adminAIUsageSummary{
 		LowBalanceThreshold: aiLowBalanceThreshold(),
+		GloballyEnabled:     true,
 	}
 
-	globalOn, err := h.isAIGloballyEnabled(c.Context())
-	if err != nil {
-		return internalError(c, "AdminAIUsageSummary settings", err)
+	if globalOn, err := h.isAIGloballyEnabled(c.Context()); err != nil {
+		summary.UsageLogError = "ai_settings unavailable — run migration V18"
+	} else {
+		summary.GloballyEnabled = globalOn
 	}
-	summary.GloballyEnabled = globalOn
 
 	if err := h.db.QueryRow(c.Context(), `
 		SELECT COALESCE(SUM(estimated_cost), 0)
 		FROM ai_usage_log
 		WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`,
 	).Scan(&summary.SpendToday); err != nil {
-		return internalError(c, "AdminAIUsageSummary spend today", err)
+		summary.UsageLogError = "ai_usage_log unavailable — run migration V18"
+		summary.SpendToday = 0
 	}
 	if err := h.db.QueryRow(c.Context(), `
 		SELECT COALESCE(SUM(estimated_cost), 0)
 		FROM ai_usage_log
 		WHERE created_at >= date_trunc('month', now() AT TIME ZONE 'UTC')`,
 	).Scan(&summary.SpendThisMonth); err != nil {
-		return internalError(c, "AdminAIUsageSummary spend month", err)
+		summary.UsageLogError = "ai_usage_log unavailable — run migration V18"
+		summary.SpendThisMonth = 0
 	}
 
 	if keyInfo, err := openrouter.FetchKeyInfo(c.Context(), h.rdb, force); err != nil {
