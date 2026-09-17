@@ -29,7 +29,8 @@ export type PendingAction =
   | { type: 'wishlist_add'; productId: string }
   | { type: 'wishlist_remove'; productId: string }
   | { type: 'place_order'; payload: Record<string, unknown> }
-  | { type: 'navigate'; href: string };
+  | { type: 'navigate'; href: string }
+  | { type: 'try_on'; productId: string };
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -189,6 +190,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             new CustomEvent('studio:replay-place-order', { detail: action.payload }),
           );
           showToast('Continuing checkout…');
+        } else if (action.type === 'try_on') {
+          window.dispatchEvent(
+            new CustomEvent('studio:try-on-resume', { detail: { productId: action.productId } }),
+          );
         }
       } catch {
         showToast('Signed in — please try that action again');

@@ -9,9 +9,20 @@ export async function fetchStylistStatus(): Promise<{ configured: boolean }> {
   return res.json() as Promise<{ configured: boolean }>;
 }
 
+export const AI_UNAVAILABLE_MESSAGE =
+  'AI features are currently unavailable for your account. Contact support if you believe this is a mistake.';
+
+export class StylistBlockedError extends Error {
+  constructor(message = AI_UNAVAILABLE_MESSAGE) {
+    super(message);
+    this.name = 'StylistBlockedError';
+  }
+}
+
 export async function streamStylistChat(
   message: string,
   onChunk: (text: string) => void,
+  sessionId?: string,
 ): Promise<void> {
   const res = await fetch('/api/stylist/chat', {
     method: 'POST',
@@ -19,18 +30,16 @@ export async function streamStylistChat(
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: sessionId || undefined }),
   });
 
+  if (res.status === 403) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new StylistBlockedError(body?.message || AI_UNAVAILABLE_MESSAGE);
+  }
+
   if (!res.ok) {
-    let detail = 'Stylist is unavailable right now.';
-    try {
-      const json = (await res.json()) as { error?: string };
-      if (json.error) detail = json.error;
-    } catch {
-      /* plain response */
-    }
-    throw new Error(detail);
+    throw new Error('AI not connected');
   }
 
   const reader = res.body?.getReader();
@@ -51,9 +60,11 @@ export async function streamStylistChat(
         const payload = line.slice(6).trim();
         if (payload === '[DONE]') return;
         try {
-          const parsed = JSON.parse(payload) as { text?: string };
+          const parsed = JSON.parse(payload) as { text?: string; error?: string };
+          if (parsed.error) throw new Error('AI not connected');
           if (parsed.text) onChunk(parsed.text);
-        } catch {
+        } catch (err) {
+          if (err instanceof Error && err.message === 'AI not connected') throw err;
           /* ignore malformed chunks */
         }
       }

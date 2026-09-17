@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"context"
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -15,6 +18,12 @@ import (
 // (CMS/content control).
 func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, store *storage.Client) {
 	h := handlers.New(db, rdb, store)
+	if err := h.EnsureAdminCredentials(context.Background()); err != nil {
+		log.Printf("admin credentials seed: %v", err)
+	}
+	if err := h.EnsureAISettings(context.Background()); err != nil {
+		log.Printf("ai settings seed: %v", err)
+	}
 	api := app.Group("/api/admin")
 
 	// Public — issues JWT used by RequireAdminAuth below.
@@ -22,8 +31,21 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, st
 
 	admin := api.Group("", middleware.RequireAdminAuth())
 
+	// --- Settings (Task 35) ---
+	admin.Get("/settings", h.AdminGetSettings)
+	admin.Post("/settings/password/code", h.AdminRequestPasswordChangeCode)
+	admin.Put("/settings/password", h.AdminChangePassword)
+
 	// --- Overview ---
 	admin.Get("/overview", h.AdminOverview) // orders today, revenue, active viewers, discount claims
+
+	// --- Categories ---
+	categories := admin.Group("/categories")
+	categories.Get("/", h.AdminListCategories)
+	categories.Post("/", h.AdminCreateCategory)
+	categories.Put("/reorder", h.AdminReorderCategories)
+	categories.Put("/:id", h.AdminUpdateCategory)
+	categories.Delete("/:id", h.AdminDeleteCategory)
 
 	// --- Products & variants ---
 	products := admin.Group("/products")
@@ -36,6 +58,8 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, st
 	products.Put("/:id/variants/:variantId", h.AdminUpdateVariant)
 	products.Delete("/:id/variants/:variantId", h.AdminDeleteVariant)
 	products.Post("/:id/images", h.AdminAddProductImage) // attach URL from /content/media
+	products.Put("/:id/images/reorder", h.AdminReorderProductImages)
+	products.Patch("/:id/images/:imageId", h.AdminUpdateProductImage)
 	products.Delete("/:id/images/:imageId", h.AdminDeleteProductImage)
 
 	// --- Bundles ---
@@ -65,6 +89,8 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, st
 	admin.Get("/saved-items", h.AdminListSavedItems)
 
 	// --- Activity feed (Task 15) ---
+	admin.Get("/activity/unread", h.AdminActivityUnread)
+	admin.Post("/activity/mark-read", h.AdminMarkActivityRead)
 	admin.Get("/activity", h.AdminActivityFeed)
 	admin.Get("/activity/summary", h.AdminActivitySummary)
 	admin.Get("/activity/export", h.AdminActivityExportCSV)
@@ -113,4 +139,14 @@ func RegisterAdminRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, st
 	admin.Get("/analytics/most-visited-pages", h.AdminMostVisitedPages)
 	admin.Get("/analytics/traffic-presence", h.AdminTrafficPresence)
 	admin.Get("/analytics/blog-reads", h.AdminBlogAnalytics)
+
+	// --- AI usage (Task 38) ---
+	ai := admin.Group("/ai-usage")
+	ai.Get("/summary", h.AdminAIUsageSummary)
+	ai.Get("/daily", h.AdminAIUsageDaily)
+	ai.Get("/breakdown", h.AdminAIUsageBreakdown)
+	ai.Get("/users", h.AdminAIUsageByUser)
+	ai.Post("/refresh", h.AdminRefreshAIBalances)
+	ai.Put("/global", h.AdminSetAIGlobalEnabled)
+	ai.Patch("/users/:userId/access", h.AdminSetUserAIAccess)
 }

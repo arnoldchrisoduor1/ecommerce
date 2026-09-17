@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge, Card, CardBody, CardMedia, Modal } from '@/components/ui';
+import { TryWithAI } from '@/components/product/TryWithAI';
 import { ViewerBadge } from '@/components/product/ViewerBadge';
 import type { ProductListItem } from '@/lib/api';
 import { formatKes } from '@/lib/format';
@@ -16,9 +17,22 @@ type Props = {
 export function ProductCard({
   product,
   showQuickView = false,
-  showViewer = false,
+  showViewer = true,
 }: Props) {
   const [quickOpen, setQuickOpen] = useState(false);
+  const [tryOnResume, setTryOnResume] = useState(false);
+
+  useEffect(() => {
+    const onResume = (e: Event) => {
+      const detail = (e as CustomEvent<{ productId: string }>).detail;
+      if (detail?.productId === product.id) {
+        setQuickOpen(true);
+        setTryOnResume(true);
+      }
+    };
+    window.addEventListener('studio:try-on-resume', onResume);
+    return () => window.removeEventListener('studio:try-on-resume', onResume);
+  }, [product.id]);
   const price = product.sale_price ?? product.base_price;
   const onSale =
     product.sale_price != null && product.sale_price < product.base_price;
@@ -52,6 +66,9 @@ export function ProductCard({
                 <Badge variant="accent">Bundle</Badge>
               </span>
             ) : null}
+            {showViewer ? (
+              <ViewerBadge productId={product.id} overlay testId="card-viewer-count" />
+            ) : null}
           </CardMedia>
           <CardBody>
             <span className="ds-display ds-display--sm product-card__name">
@@ -69,7 +86,6 @@ export function ProductCard({
                 formatKes(price)
               )}
             </span>
-            {showViewer ? <ViewerBadge productId={product.id} /> : null}
           </CardBody>
         </Link>
       </Card>
@@ -124,6 +140,14 @@ export function ProductCard({
                 {product.variants.length} option
                 {product.variants.length === 1 ? '' : 's'} on full page
               </p>
+            ) : null}
+            {!product.is_bundle ? (
+              <TryWithAI
+                productId={product.id}
+                productName={product.name}
+                autoOpen={tryOnResume}
+                onAutoOpenHandled={() => setTryOnResume(false)}
+              />
             ) : null}
             <div className="quick-view__actions">
               <Link

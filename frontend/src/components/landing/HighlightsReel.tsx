@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import {
   useCallback,
   useEffect,
@@ -254,14 +255,33 @@ export function HighlightsReel({ highlights }: Props) {
               ))}
             </div>
 
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={current.image_url}
-              alt={current.caption || active.title}
-              className="highlight-viewer__media"
-              decoding="async"
-              draggable={false}
-            />
+            {current.product_slug ? (
+              <Link
+                href={`/product/${current.product_slug}`}
+                className="highlight-viewer__media-link"
+                data-testid="highlight-product-link"
+                onPointerDown={(e) => e.stopPropagation()}
+                onPointerUp={(e) => e.stopPropagation()}
+                onClick={() => close()}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={current.image_url}
+                  alt={current.caption || active.title}
+                  decoding="async"
+                  draggable={false}
+                />
+              </Link>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={current.image_url}
+                alt={current.caption || active.title}
+                className="highlight-viewer__media"
+                decoding="async"
+                draggable={false}
+              />
+            )}
 
             {current.caption ? (
               <p

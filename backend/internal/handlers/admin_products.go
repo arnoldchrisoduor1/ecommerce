@@ -280,6 +280,45 @@ func (h *Handler) AdminUpdateProduct(c *fiber.Ctx) error {
 
 func (h *Handler) AdminDeleteProduct(c *fiber.Ctx) error {
 	id := c.Params("id")
+
+	var exists bool
+	err := h.db.QueryRow(c.Context(), `
+		SELECT EXISTS(SELECT 1 FROM products WHERE id = $1 AND is_bundle = false)`, id,
+	).Scan(&exists)
+	if err != nil {
+		return internalError(c, "AdminDeleteProduct lookup", err)
+	}
+	if !exists {
+		return notFound(c, "product not found")
+	}
+
+	var orderUses int64
+	if err := h.db.QueryRow(c.Context(), `
+		SELECT COUNT(*)::bigint
+		FROM order_items oi
+		JOIN product_variants pv ON pv.id = oi.variant_id
+		WHERE pv.product_id = $1`, id,
+	).Scan(&orderUses); err != nil {
+		return internalError(c, "AdminDeleteProduct order count", err)
+	}
+
+	if orderUses > 0 {
+		tag, err := h.db.Exec(c.Context(), `
+			UPDATE products SET status = 'archived', updated_at = now()
+			WHERE id = $1 AND is_bundle = false`, id)
+		if err != nil {
+			return internalError(c, "AdminDeleteProduct archive", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return notFound(c, "product not found")
+		}
+		return c.JSON(fiber.Map{
+			"archived":    true,
+			"order_uses":  orderUses,
+			"message":     "product has order history — archived instead of deleted",
+		})
+	}
+
 	tag, err := h.db.Exec(c.Context(), `DELETE FROM products WHERE id = $1 AND is_bundle = false`, id)
 	if err != nil {
 		return internalError(c, "AdminDeleteProduct delete", err)
@@ -490,4 +529,120 @@ func (h *Handler) AdminDeleteProductImage(c *fiber.Ctx) error {
 
 	_, _ = h.db.Exec(c.Context(), `UPDATE products SET updated_at = now() WHERE id = $1`, productID)
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+type adminProductImagesReorderInput struct {
+	ImageIDs []string `json:"image_ids"`
+}
+
+func (h *Handler) AdminReorderProductImages(c *fiber.Ctx) error {
+	productID := c.Params("id")
+	var req adminProductImagesReorderInput
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+	if len(req.ImageIDs) == 0 {
+		return badRequest(c, "image_ids required")
+	}
+
+	var exists bool
+	err := h.db.QueryRow(c.Context(), `
+		SELECT EXISTS(SELECT 1 FROM products WHERE id = $1 AND is_bundle = false)`, productID,
+	).Scan(&exists)
+	if err != nil {
+		return internalError(c, "AdminReorderProductImages product check", err)
+	}
+	if !exists {
+		return notFound(c, "product not found")
+	}
+
+	tx, err := h.db.Begin(c.Context())
+	if err != nil {
+		return internalError(c, "AdminReorderProductImages begin", err)
+	}
+	defer tx.Rollback(c.Context())
+
+	for i, imageID := range req.ImageIDs {
+		imageID = strings.TrimSpace(imageID)
+		if imageID == "" {
+			continue
+		}
+		tag, err := tx.Exec(c.Context(), `
+			UPDATE product_images SET position = $1
+			WHERE id = $2 AND product_id = $3`, i, imageID, productID)
+		if err != nil {
+			return internalError(c, "AdminReorderProductImages update", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return badRequest(c, "invalid image_id")
+		}
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return internalError(c, "AdminReorderProductImages commit", err)
+	}
+
+	_, _ = h.db.Exec(c.Context(), `UPDATE products SET updated_at = now() WHERE id = $1`, productID)
+
+	p, err := h.loadAdminProduct(c, productID, true)
+	if err != nil {
+		return internalError(c, "AdminReorderProductImages load", err)
+	}
+	return c.JSON(p)
+}
+
+func (h *Handler) AdminUpdateProductImage(c *fiber.Ctx) error {
+	productID := c.Params("id")
+	imageID := c.Params("imageId")
+
+	var req struct {
+		VariantID *string `json:"variant_id"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+
+	var variantPtr *string
+	if req.VariantID != nil {
+		v := strings.TrimSpace(*req.VariantID)
+		if v == "" {
+			variantPtr = nil
+		} else {
+			var ok bool
+			err := h.db.QueryRow(c.Context(), `
+				SELECT EXISTS(SELECT 1 FROM product_variants WHERE id = $1 AND product_id = $2)`,
+				v, productID,
+			).Scan(&ok)
+			if err != nil {
+				return internalError(c, "AdminUpdateProductImage variant check", err)
+			}
+			if !ok {
+				return badRequest(c, "variant_id does not belong to this product")
+			}
+			variantPtr = &v
+		}
+	} else {
+		return badRequest(c, "variant_id field required (use null to clear)")
+	}
+
+	tag, err := h.db.Exec(c.Context(), `
+		UPDATE product_images SET variant_id = $1
+		WHERE id = $2 AND product_id = $3`, variantPtr, imageID, productID)
+	if err != nil {
+		return internalError(c, "AdminUpdateProductImage update", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return notFound(c, "image not found")
+	}
+
+	var img productImage
+	err = h.db.QueryRow(c.Context(), `
+		SELECT id, variant_id, url, position
+		FROM product_images WHERE id = $1`, imageID,
+	).Scan(&img.ID, &img.VariantID, &img.URL, &img.Position)
+	if err != nil {
+		return internalError(c, "AdminUpdateProductImage load", err)
+	}
+	h.expandProductImage(&img)
+	_, _ = h.db.Exec(c.Context(), `UPDATE products SET updated_at = now() WHERE id = $1`, productID)
+	return c.JSON(img)
 }

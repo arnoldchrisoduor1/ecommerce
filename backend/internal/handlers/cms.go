@@ -18,11 +18,13 @@ type contentBlockResponse struct {
 }
 
 type highlightSlideItem struct {
-	ID              string `json:"id"`
-	ImageURL        string `json:"image_url"`
-	Caption         string `json:"caption"`
-	CaptionPosition string `json:"caption_position"`
-	SortOrder       int    `json:"sort_order"`
+	ID              string  `json:"id"`
+	ImageURL        string  `json:"image_url"`
+	Caption         string  `json:"caption"`
+	CaptionPosition string  `json:"caption_position"`
+	SortOrder       int     `json:"sort_order"`
+	ProductID       *string `json:"product_id,omitempty"`
+	ProductSlug     *string `json:"product_slug,omitempty"`
 }
 
 type highlightItem struct {
@@ -136,10 +138,12 @@ func (h *Handler) attachHighlightSlides(c *fiber.Ctx, items []highlightItem, ids
 		return nil
 	}
 	rows, err := h.db.Query(c.Context(), `
-		SELECT id, highlight_id, image_url, caption, caption_position, sort_order
-		FROM highlight_slides
-		WHERE highlight_id = ANY($1::uuid[])
-		ORDER BY highlight_id, sort_order, id`, ids)
+		SELECT s.id, s.highlight_id, s.image_url, s.caption, s.caption_position, s.sort_order,
+		       s.product_id, p.slug
+		FROM highlight_slides s
+		LEFT JOIN products p ON p.id = s.product_id
+		WHERE s.highlight_id = ANY($1::uuid[])
+		ORDER BY s.highlight_id, s.sort_order, s.id`, ids)
 	if err != nil {
 		return err
 	}
@@ -149,7 +153,10 @@ func (h *Handler) attachHighlightSlides(c *fiber.Ctx, items []highlightItem, ids
 	for rows.Next() {
 		var slide highlightSlideItem
 		var highlightID string
-		if err := rows.Scan(&slide.ID, &highlightID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder); err != nil {
+		if err := rows.Scan(
+			&slide.ID, &highlightID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder,
+			&slide.ProductID, &slide.ProductSlug,
+		); err != nil {
 			return err
 		}
 		slide.ImageURL = h.expandMedia(slide.ImageURL)

@@ -45,6 +45,15 @@ func (c *Client) SendVerificationCode(ctx context.Context, email, purpose, code 
 	return c.deliver(ctx, email, subject, body, code)
 }
 
+func (c *Client) SendAdminPasswordChangeCode(ctx context.Context, email, code string) error {
+	subject := c.brand + " admin password change"
+	body := fmt.Sprintf(
+		"Use code %s to confirm your admin password change.\nExpires in 10 minutes.\n\n%s",
+		code, c.brand,
+	)
+	return c.deliver(ctx, email, subject, body, code)
+}
+
 func (c *Client) SendPasswordResetCode(ctx context.Context, email, code string) error {
 	subject := c.brand + " password reset"
 	body := fmt.Sprintf(

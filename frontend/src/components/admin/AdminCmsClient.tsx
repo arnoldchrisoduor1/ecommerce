@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { useAdminUi } from '@/components/admin/AdminUiProvider';
@@ -75,29 +76,41 @@ export function AdminHeroEditorClient() {
   );
 }
 
-type AnnouncementData = { messages?: string[] };
+type AnnouncementData = {
+  messages?: string[];
+  rotation_interval_seconds?: number;
+};
 
 export function AdminAnnouncementEditorClient() {
   const { ready, toast } = useAdminUi();
-  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<string[]>([]);
+  const [intervalSec, setIntervalSec] = useState('4');
+  const [draft, setDraft] = useState('');
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
     void apiGet<ContentBlock<unknown>>('/content/blocks/announcement_bar').then((block) => {
       const data = parseBlockData<AnnouncementData>(block.data);
-      setMessage(data.messages?.[0] || '');
+      setMessages((data.messages || []).filter(Boolean));
+      setIntervalSec(String(data.rotation_interval_seconds ?? 4));
     });
   }, [ready]);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function save(nextMessages: string[], nextInterval?: string) {
     setBusy(true);
+    const sec = Number(nextInterval ?? intervalSec);
     try {
       await adminSend('/content/blocks/announcement_bar', 'PUT', {
-        data: { messages: [message] },
+        data: {
+          messages: nextMessages.filter((m) => m.trim()),
+          rotation_interval_seconds: Number.isFinite(sec) && sec >= 2 ? sec : 4,
+        },
         is_active: true,
       });
+      setMessages(nextMessages.filter((m) => m.trim()));
       toast('Announcement saved', 'content-saved-toast');
     } catch {
       toast('Could not save');
@@ -106,15 +119,195 @@ export function AdminAnnouncementEditorClient() {
     }
   }
 
+  async function onSaveAll(e: FormEvent) {
+    e.preventDefault();
+    await save(messages);
+  }
+
+  function addMessage() {
+    const text = draft.trim();
+    if (!text) return;
+    const next = [...messages, text];
+    setDraft('');
+    void save(next);
+  }
+
+  function removeMessage(idx: number) {
+    const next = messages.filter((_, i) => i !== idx);
+    void save(next);
+  }
+
+  function startEdit(idx: number) {
+    setEditIdx(idx);
+    setEditText(messages[idx] || '');
+  }
+
+  function commitEdit() {
+    if (editIdx == null) return;
+    const next = [...messages];
+    next[editIdx] = editText.trim();
+    setEditIdx(null);
+    void save(next);
+  }
+
+  function moveMessage(idx: number, dir: -1 | 1) {
+    const j = idx + dir;
+    if (j < 0 || j >= messages.length) return;
+    const next = [...messages];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    void save(next);
+  }
+
   return (
     <AdminShell title="Announcement bar">
-      <form className="admin-form" onSubmit={(e) => void onSubmit(e)}>
+      <p className="ds-caption admin-lead">
+        Add multiple messages — they rotate on the home page. One message = static bar.
+      </p>
+      <form className="admin-form" onSubmit={(e) => void onSaveAll(e)} data-testid="announcement-editor">
         <label className="admin-field">
-          <span className="ds-label">Message</span>
-          <input className="admin-input" value={message} onChange={(e) => setMessage(e.target.value)} />
+          <span className="ds-label">Rotation interval (seconds)</span>
+          <input
+            className="admin-input"
+            type="number"
+            min={2}
+            max={120}
+            value={intervalSec}
+            data-testid="announce-interval"
+            onChange={(e) => setIntervalSec(e.target.value)}
+          />
         </label>
+
+        <div className="admin-announce-add">
+          <label className="admin-field admin-field--grow">
+            <span className="ds-label">New message</span>
+            <input
+              className="admin-input"
+              value={draft}
+              placeholder="Free delivery over KES 3000"
+              data-testid="announce-new-message"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addMessage();
+                }
+              }}
+            />
+          </label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="md"
+            disabled={busy || !draft.trim()}
+            data-testid="announce-add-btn"
+            onClick={() => addMessage()}
+          >
+            Add
+          </Button>
+        </div>
+
+        <table className="admin-table" data-testid="announce-messages-table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Message</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {messages.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="ds-caption">
+                  No messages yet.
+                </td>
+              </tr>
+            ) : (
+              messages.map((msg, idx) => (
+                <tr key={`${idx}-${msg.slice(0, 12)}`} data-testid="announce-message-row">
+                  <td>
+                    <div className="admin-categories__order">
+                      <button
+                        type="button"
+                        className="ds-btn ds-btn--ghost ds-btn--xs"
+                        aria-label="Move up"
+                        disabled={busy || idx === 0}
+                        onClick={() => moveMessage(idx, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="ds-btn ds-btn--ghost ds-btn--xs"
+                        aria-label="Move down"
+                        disabled={busy || idx === messages.length - 1}
+                        onClick={() => moveMessage(idx, 1)}
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    {editIdx === idx ? (
+                      <input
+                        className="admin-input"
+                        value={editText}
+                        data-testid="announce-edit-input"
+                        onChange={(e) => setEditText(e.target.value)}
+                      />
+                    ) : (
+                      msg
+                    )}
+                  </td>
+                  <td>
+                    <div className="admin-row-actions">
+                      {editIdx === idx ? (
+                        <>
+                          <button
+                            type="button"
+                            className="ds-btn ds-btn--primary ds-btn--xs"
+                            disabled={busy}
+                            onClick={() => commitEdit()}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            className="ds-btn ds-btn--ghost ds-btn--xs"
+                            onClick={() => setEditIdx(null)}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="ds-btn ds-btn--ghost ds-btn--xs"
+                            onClick={() => startEdit(idx)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="ds-btn ds-btn--ghost ds-btn--xs"
+                            data-testid="announce-delete-btn"
+                            disabled={busy}
+                            onClick={() => removeMessage(idx)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+
         <Button type="submit" variant="primary" size="md" disabled={busy} data-testid="save-content-block">
-          Save
+          Save interval
         </Button>
       </form>
     </AdminShell>
@@ -127,6 +320,8 @@ type HighlightSlide = {
   caption: string;
   caption_position: string;
   sort_order: number;
+  product_id?: string | null;
+  product_slug?: string | null;
 };
 
 type Highlight = {
@@ -138,9 +333,50 @@ type Highlight = {
   slides?: HighlightSlide[];
 };
 
+type ProductOption = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+function captionPositionClass(pos: string) {
+  const normalized = pos === 'center' ? 'centre' : pos || 'bottom';
+  if (normalized === 'top' || normalized === 'centre') return normalized;
+  return 'bottom';
+}
+
+function HighlightSlidePreview({ slide }: { slide: HighlightSlide }) {
+  const pos = captionPositionClass(slide.caption_position);
+  const image = slide.image_url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={slide.image_url} alt="" />
+  ) : (
+    <span className="admin-product-thumb--empty" style={{ display: 'block', width: '100%', height: '100%' }} />
+  );
+
+  return (
+    <div className="admin-highlight-slide__preview" data-testid="highlight-slide-preview">
+      {slide.product_slug ? (
+        <Link href={`/product/${slide.product_slug}`} className="admin-highlight-slide__preview-link">
+          {image}
+        </Link>
+      ) : (
+        image
+      )}
+      <p
+        className={`admin-highlight-caption-preview admin-highlight-caption-preview--${pos}`}
+        data-testid="highlight-caption-preview"
+      >
+        {slide.caption.trim() || 'Caption preview'}
+      </p>
+    </div>
+  );
+}
+
 export function AdminHighlightsClient() {
   const { ready, toast } = useAdminUi();
   const [items, setItems] = useState<Highlight[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
   const [busy, setBusy] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newLink, setNewLink] = useState('');
@@ -154,6 +390,7 @@ export function AdminHighlightsClient() {
   useEffect(() => {
     if (!ready) return;
     void reload();
+    void adminGet<{ products: ProductOption[] }>('/products').then((d) => setProducts(d.products));
   }, [ready]);
 
   async function uploadMedia(file: File, folder = 'cms/highlights'): Promise<string> {
@@ -310,6 +547,7 @@ export function AdminHighlightsClient() {
         caption: s.caption,
         caption_position: s.caption_position,
         sort_order: s.sort_order,
+        product_id: s.product_id || null,
       });
       toast('Slide saved', 'content-saved-toast');
       await reload();
@@ -353,150 +591,176 @@ export function AdminHighlightsClient() {
     }
   }
 
+  function onSlideProductChange(highlightId: string, slideId: string, productId: string) {
+    const product = products.find((p) => p.id === productId);
+    updateSlideLocal(highlightId, slideId, {
+      product_id: productId || null,
+      product_slug: product?.slug || null,
+    });
+  }
+
   return (
     <AdminShell title="Highlights">
       <ul className="admin-hero-slides">
-        {items.map((h) => (
-          <li key={h.id} className="admin-hero-slide" data-testid="highlight-row">
-            {h.media_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={h.media_url} alt="" className="admin-hero-slide__img" />
-            ) : (
-              <span className="admin-hero-slide__img admin-product-thumb--empty" />
-            )}
-            <div className="admin-cell-stack" style={{ gap: 'var(--space-2)', flex: 1 }}>
-              <label className="admin-field">
-                <span className="ds-label">Title</span>
-                <input
-                  className="admin-input"
-                  value={h.title}
-                  disabled={busy}
-                  onChange={(e) => updateLocal(h.id, { title: e.target.value })}
-                />
-              </label>
-              <label className="admin-field">
-                <span className="ds-label">Link URL</span>
-                <input
-                  className="admin-input"
-                  value={h.link_url || ''}
-                  disabled={busy}
-                  onChange={(e) => updateLocal(h.id, { link_url: e.target.value })}
-                  placeholder="/shop"
-                />
-              </label>
-              <div className="admin-hero-slide__actions">
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void saveHighlight(h)}
-                >
-                  Save
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void move(h.id, -1)}
-                >
-                  Up
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void move(h.id, 1)}
-                >
-                  Down
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void removeHighlight(h.id)}
-                >
-                  Remove
-                </Button>
-              </div>
+        {items.map((h) => {
+          const orderedSlides = [...(h.slides || [])].sort((a, b) => a.sort_order - b.sort_order);
+          return (
+            <li key={h.id} className="admin-highlight-card" data-testid="highlight-row">
+              <section className="admin-highlight-section admin-highlight-section--meta">
+                <h3 className="admin-highlight-section__title">Highlight metadata</h3>
+                <label className="admin-field">
+                  <span className="ds-label">Title</span>
+                  <input
+                    className="admin-input"
+                    value={h.title}
+                    disabled={busy}
+                    onChange={(e) => updateLocal(h.id, { title: e.target.value })}
+                  />
+                </label>
+                <label className="admin-field">
+                  <span className="ds-label">Link URL</span>
+                  <input
+                    className="admin-input"
+                    value={h.link_url || ''}
+                    disabled={busy}
+                    onChange={(e) => updateLocal(h.id, { link_url: e.target.value })}
+                    placeholder="/shop"
+                  />
+                </label>
+                <div className="admin-hero-slide__actions">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void saveHighlight(h)}
+                  >
+                    Save highlight
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void move(h.id, -1)}
+                  >
+                    Up
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void move(h.id, 1)}
+                  >
+                    Down
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void removeHighlight(h.id)}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </section>
 
-              <div className="admin-highlight-slides" data-testid="highlight-slides">
-                <p className="ds-label">Slides</p>
-                {(h.slides || []).map((s) => (
-                  <div key={s.id} className="admin-highlight-slide" data-testid="highlight-slide-row">
-                    {s.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.image_url} alt="" className="admin-hero-slide__img" />
-                    ) : null}
-                    <label className="admin-field">
-                      <span className="ds-label">Caption</span>
-                      <input
-                        className="admin-input"
-                        value={s.caption}
-                        disabled={busy}
-                        onChange={(e) =>
-                          updateSlideLocal(h.id, s.id, { caption: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label className="admin-field">
-                      <span className="ds-label">Caption position</span>
-                      <select
-                        className="admin-input"
-                        value={s.caption_position || 'bottom'}
-                        disabled={busy}
-                        onChange={(e) =>
-                          updateSlideLocal(h.id, s.id, { caption_position: e.target.value })
-                        }
-                      >
-                        <option value="top">Top</option>
-                        <option value="centre">Centre</option>
-                        <option value="bottom">Bottom</option>
-                      </select>
-                    </label>
-                    <div className="admin-hero-slide__actions">
-                      <Button
-                        type="button"
-                        variant="primary"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => void saveSlide(h, s)}
-                      >
-                        Save slide
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => void moveSlide(h, s.id, -1)}
-                      >
-                        Up
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => void moveSlide(h, s.id, 1)}
-                      >
-                        Down
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        disabled={busy || (h.slides || []).length <= 1}
-                        onClick={() => void removeSlide(h, s.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+              <section className="admin-highlight-section admin-highlight-section--slides" data-testid="highlight-slides">
+                <h3 className="admin-highlight-section__title">
+                  Slides ({orderedSlides.length})
+                </h3>
+                <ol className="admin-highlight-slide-list">
+                  {orderedSlides.map((s) => (
+                    <li key={s.id} className="admin-highlight-slide" data-testid="highlight-slide-row">
+                      <HighlightSlidePreview slide={s} />
+                      <div className="admin-highlight-slide__fields">
+                        <p className="admin-highlight-slide__index" />
+                        <label className="admin-field">
+                          <span className="ds-label">Caption</span>
+                          <input
+                            className="admin-input"
+                            value={s.caption}
+                            disabled={busy}
+                            onChange={(e) =>
+                              updateSlideLocal(h.id, s.id, { caption: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label className="admin-field">
+                          <span className="ds-label">Caption position</span>
+                          <select
+                            className="admin-input"
+                            value={s.caption_position || 'bottom'}
+                            disabled={busy}
+                            onChange={(e) =>
+                              updateSlideLocal(h.id, s.id, { caption_position: e.target.value })
+                            }
+                          >
+                            <option value="top">Top</option>
+                            <option value="centre">Centre</option>
+                            <option value="bottom">Bottom</option>
+                          </select>
+                        </label>
+                        <label className="admin-field">
+                          <span className="ds-label">Link to product</span>
+                          <select
+                            className="admin-input"
+                            value={s.product_id || ''}
+                            disabled={busy}
+                            onChange={(e) => onSlideProductChange(h.id, s.id, e.target.value)}
+                          >
+                            <option value="">None</option>
+                            {products.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="admin-hero-slide__actions">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => void saveSlide(h, s)}
+                          >
+                            Save slide
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => void moveSlide(h, s.id, -1)}
+                          >
+                            Up
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => void moveSlide(h, s.id, 1)}
+                          >
+                            Down
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            disabled={busy || orderedSlides.length <= 1}
+                            onClick={() => void removeSlide(h, s.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
                 <label className="admin-field">
                   <span className="ds-label">Add slide image</span>
                   <input
@@ -510,10 +774,10 @@ export function AdminHighlightsClient() {
                     }}
                   />
                 </label>
-              </div>
-            </div>
-          </li>
-        ))}
+              </section>
+            </li>
+          );
+        })}
       </ul>
 
       <section className="admin-panel" style={{ marginTop: 'var(--space-8)' }}>

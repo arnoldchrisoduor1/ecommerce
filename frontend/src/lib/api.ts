@@ -4,6 +4,10 @@
  * Server components hit the backend origin directly.
  */
 
+import { defaultHeroCrop, normalizeCrop, type HeroCrop } from '@/lib/heroCrop';
+
+export type { HeroCrop };
+
 const serverOrigin =
   process.env.API_URL?.replace(/\/$/, '') || 'http://localhost:8081';
 
@@ -144,10 +148,14 @@ export type ContentBlock<T> = {
 
 export type HeroSlide = {
   url: string;
-  /** Horizontal focal point 0–1 (default 0.5). */
+  /** Horizontal focal point 0–1 (legacy fallback). */
   focal_x?: number;
-  /** Vertical focal point 0–1 (default 0.5). */
+  /** Vertical focal point 0–1 (legacy fallback). */
   focal_y?: number;
+  /** Normalized crop rect for mobile hero (5:6). */
+  crop_mobile?: HeroCrop;
+  /** Normalized crop rect for desktop hero (21:9). */
+  crop_desktop?: HeroCrop;
 };
 
 export type HeroData = {
@@ -171,7 +179,7 @@ function clampFocal(n: unknown, fallback = 0.5): number {
   return Math.min(1, Math.max(0, v));
 }
 
-/** Normalize hero media into slides with focal points. */
+/** Normalize hero media into slides with crop + focal metadata. */
 export function heroSlides(hero: HeroData): HeroSlide[] {
   if (Array.isArray(hero.slides) && hero.slides.length) {
     return hero.slides
@@ -179,11 +187,20 @@ export function heroSlides(hero: HeroData): HeroSlide[] {
         url: (s?.url || '').trim(),
         focal_x: clampFocal(s?.focal_x),
         focal_y: clampFocal(s?.focal_y),
+        crop_mobile: normalizeCrop(s?.crop_mobile ?? defaultHeroCrop()),
+        crop_desktop: normalizeCrop(s?.crop_desktop ?? defaultHeroCrop()),
       }))
       .filter((s) => s.url);
   }
   const urls = heroMediaUrls(hero);
-  return urls.map((url) => ({ url, focal_x: 0.5, focal_y: 0.5 }));
+  const full = defaultHeroCrop();
+  return urls.map((url) => ({
+    url,
+    focal_x: 0.5,
+    focal_y: 0.5,
+    crop_mobile: full,
+    crop_desktop: full,
+  }));
 }
 
 /** Resolve ordered hero slide URLs from CMS block data. */
@@ -199,6 +216,17 @@ export function heroMediaUrls(hero: HeroData): string[] {
 
 export type AnnouncementData = {
   messages?: string[];
+  /** Seconds each message stays visible before rotating (default 4). */
+  rotation_interval_seconds?: number;
+};
+
+export type IdlePromoData = {
+  enabled?: boolean;
+  idle_seconds?: number;
+  image_url?: string;
+  text?: string;
+  button_label?: string;
+  button_url?: string;
 };
 
 export type HighlightSlide = {
@@ -207,6 +235,8 @@ export type HighlightSlide = {
   caption: string;
   caption_position: 'top' | 'centre' | 'bottom' | string;
   sort_order: number;
+  product_id?: string | null;
+  product_slug?: string | null;
 };
 
 export type Highlight = {
@@ -222,6 +252,7 @@ export type ProductImage = {
   id: string;
   url: string;
   position: number;
+  variant_id?: string | null;
 };
 
 export type ProductListItem = {

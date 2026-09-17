@@ -9,6 +9,7 @@ import {
   OrderStatusPill,
 } from '@/components/account/AccountShell';
 import { useCart } from '@/components/cart/CartProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { apiGet } from '@/lib/api';
 import { formatKes } from '@/lib/format';
 import {
@@ -25,6 +26,7 @@ type OrderRow = {
 };
 
 export function AccountOverview() {
+  const { user, authFetch } = useAuth();
   const { sessionId } = useCart();
   const [phone, setPhone] = useState('');
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -89,6 +91,40 @@ export function AccountOverview() {
             </p>
           ) : null}
         </form>
+      </section>
+
+      <section className="account-card" id="security" aria-labelledby="account-security">
+        <h2 id="account-security" className="ds-display ds-display--sm">
+          Security
+        </h2>
+        <p className="ds-body account-card__lede">
+          Two-step verification protects sensitive features like AI try-on.
+        </p>
+        <p className="ds-caption">
+          Email verified: {user?.email_verified ? 'Yes' : 'No'}
+        </p>
+        <p className="ds-caption">
+          Two-step verification: {user?.two_factor_enabled ? 'Enabled' : 'Not enabled'}
+        </p>
+        {!user?.two_factor_enabled ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            data-testid="account-enable-2fa"
+            onClick={() => {
+              void (async () => {
+                await authFetch('/auth/two-factor', {
+                  method: 'POST',
+                  body: JSON.stringify({ enabled: true }),
+                });
+                window.location.href = `/verify?purpose=two_factor&email=${encodeURIComponent(user?.email || '')}`;
+              })();
+            }}
+          >
+            Enable two-step verification
+          </Button>
+        ) : null}
       </section>
 
       <section className="account-card" aria-labelledby="recent-orders">

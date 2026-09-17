@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useAdminUi } from '@/components/admin/AdminUiProvider';
+import { adminGet, adminSend } from '@/lib/admin';
 
 const NAV_SECTIONS: { label: string; items: { href: string; label: string }[] }[] = [
   {
@@ -10,6 +12,7 @@ const NAV_SECTIONS: { label: string; items: { href: string; label: string }[] }[
     items: [
       { href: '/admin', label: 'Overview' },
       { href: '/admin/products', label: 'Products' },
+      { href: '/admin/categories', label: 'Categories' },
       { href: '/admin/orders', label: 'Orders' },
       { href: '/admin/discounts', label: 'Discounts' },
     ],
@@ -25,10 +28,18 @@ const NAV_SECTIONS: { label: string; items: { href: string; label: string }[] }[
     ],
   },
   {
+    label: 'System',
+    items: [
+      { href: '/admin/ai-usage', label: 'AI Usage' },
+      { href: '/admin/settings', label: 'Settings' },
+    ],
+  },
+  {
     label: 'Content',
     items: [
       { href: '/admin/content/hero', label: 'Hero' },
       { href: '/admin/content/announcement', label: 'Announcement' },
+      { href: '/admin/content/idle-promo', label: 'Idle promo' },
       { href: '/admin/content/highlights', label: 'Highlights' },
       { href: '/admin/content/shelves', label: 'Shelves' },
       { href: '/admin/content/blog', label: 'Blog' },
@@ -53,7 +64,45 @@ export function AdminShell({
   children: ReactNode;
 }) {
   const path = usePathname();
+  const { ready } = useAdminUi();
   const [open, setOpen] = useState(true);
+  const [activityUnread, setActivityUnread] = useState(0);
+  const [activityNotifications, setActivityNotifications] = useState(0);
+
+  const loadUnread = useCallback(async () => {
+    if (!ready) return;
+    try {
+      const r = await adminGet<{ unread: number; notifications: number }>('/activity/unread');
+      setActivityUnread(r.unread ?? 0);
+      setActivityNotifications(r.notifications ?? 0);
+    } catch {
+      /* ignore */
+    }
+  }, [ready]);
+
+  useEffect(() => {
+    void loadUnread();
+    const id = window.setInterval(() => void loadUnread(), 30_000);
+    const onRead = () => {
+      setActivityUnread(0);
+      setActivityNotifications(0);
+    };
+    window.addEventListener('admin:activity-read', onRead);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('admin:activity-read', onRead);
+    };
+  }, [loadUnread]);
+
+  useEffect(() => {
+    if (!ready || path !== '/admin/activity') return;
+    void adminSend('/activity/mark-read', 'POST', {}).then(onReadLocal).catch(() => {});
+    function onReadLocal() {
+      setActivityUnread(0);
+      setActivityNotifications(0);
+      window.dispatchEvent(new Event('admin:activity-read'));
+    }
+  }, [ready, path]);
 
   useEffect(() => {
     try {
@@ -99,15 +148,27 @@ export function AdminShell({
             <div key={section.label} className="admin-sidebar__section">
               <p className="admin-sidebar__section-label ds-caption">{section.label}</p>
               {section.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`admin-sidebar__link ds-label${
-                    linkActive(path, item.href) ? ' admin-sidebar__link--active' : ''
-                  }`}
-                >
-                  {item.label}
-                </Link>
+                <div key={item.href} className="admin-sidebar__link-row">
+                  <Link
+                    href={item.href}
+                    className={`admin-sidebar__link ds-label${
+                      linkActive(path, item.href) ? ' admin-sidebar__link--active' : ''
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                  {item.href === '/admin/activity' && activityUnread > 0 ? (
+                    <span
+                      className={`admin-sidebar__badge${
+                        activityNotifications > 0 ? ' admin-sidebar__badge--alert' : ''
+                      }`}
+                      data-testid="admin-activity-unread-badge"
+                      aria-label={`${activityUnread} unread activity events`}
+                    >
+                      {activityUnread}
+                    </span>
+                  ) : null}
+                </div>
               ))}
             </div>
           ))}

@@ -8,6 +8,7 @@ import {
   type FeaturedReview,
   type HeroData,
   type Highlight,
+  type IdlePromoData,
   type ProductListItem,
   type StatsCounter,
 } from '@/lib/api';
@@ -30,6 +31,7 @@ import { ActivityTicker } from '@/components/urgency/ActivityTicker';
 import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { DemoMascot } from '@/components/demo/DemoMascot';
+import { IdlePromoBanner } from '@/components/promo/IdlePromoBanner';
 import './landing.css';
 import './catalog.css';
 
@@ -46,6 +48,7 @@ async function loadLanding() {
     apiGet<{ reviews: FeaturedReview[] }>('/reviews/featured'),
     apiGet<{ posts: BlogPost[] }>('/content/blog'),
     apiGet<{ counters: StatsCounter[] }>('/content/stats'),
+    apiGet<ContentBlock<unknown>>('/content/blocks/home_idle_promo'),
   ]);
 
   const value = <T,>(i: number, fallback: T): T => {
@@ -61,6 +64,7 @@ async function loadLanding() {
   const reviews = value<{ reviews: FeaturedReview[] }>(5, { reviews: [] }).reviews;
   const posts = value<{ posts: BlogPost[] }>(6, { posts: [] }).posts;
   const counters = value<{ counters: StatsCounter[] }>(7, { counters: [] }).counters;
+  const idlePromoBlock = value<ContentBlock<unknown> | null>(8, null);
 
   const announce = announceBlock
     ? parseBlockData<AnnouncementData>(announceBlock.data)
@@ -73,6 +77,10 @@ async function loadLanding() {
 
   return {
     messages: announce.messages ?? [],
+    announceInterval: announce.rotation_interval_seconds ?? 4,
+    idlePromo: idlePromoBlock
+      ? parseBlockData<IdlePromoData>(idlePromoBlock.data)
+      : ({} as IdlePromoData),
     hero,
     highlights,
     categories,
@@ -92,7 +100,10 @@ export default async function HomePage() {
       <CartProvider>
         <PageViewTracker />
         <div className="landing-page">
-          <AnnouncementBar messages={data.messages} />
+          <AnnouncementBar
+            messages={data.messages}
+            intervalSeconds={data.announceInterval}
+          />
           <MainNav categories={data.categories} />
           <HighlightsReel highlights={data.highlights} />
           <Hero hero={data.hero} />
@@ -115,6 +126,7 @@ export default async function HomePage() {
           <CartDrawer />
           <ExitIntent />
           <PurchaseTicker />
+          <IdlePromoBanner config={data.idlePromo} />
         </div>
       </CartProvider>
     </AuthProvider>

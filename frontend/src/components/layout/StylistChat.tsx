@@ -7,8 +7,10 @@ import { useCart } from '@/components/cart/CartProvider';
 import { apiGet, type ProductDetail, type ProductListItem } from '@/lib/api';
 import { formatKes } from '@/lib/format';
 import {
+  AI_UNAVAILABLE_MESSAGE,
   fetchStylistStatus,
   slugsInText,
+  StylistBlockedError,
   streamStylistChat,
   submitStyleQuiz,
   type StyleQuizAnswers,
@@ -167,7 +169,7 @@ export function StylistChatPanel({
 }: {
   configured: boolean | null;
 }) {
-  const { addToCart } = useCart();
+  const { addToCart, sessionId } = useCart();
   const [mode, setMode] = useState<'chat' | 'quiz'>('chat');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -230,7 +232,7 @@ export function StylistChatPanel({
             msg.id === assistantId ? { ...msg, text: full } : msg,
           ),
         );
-      });
+      }, sessionId);
       const slugs = slugsInText(
         full,
         slugCatalog.map((s) => s.slug),
@@ -243,10 +245,10 @@ export function StylistChatPanel({
         ),
       );
     } catch (err) {
+      const blocked =
+        err instanceof StylistBlockedError ? err.message : AI_UNAVAILABLE_MESSAGE;
       const fallback =
-        err instanceof Error
-          ? err.message
-          : 'Stylist is unavailable right now. Browse the shop or try again later.';
+        err instanceof StylistBlockedError ? blocked : 'AI not connected';
       setMessages((m) =>
         m.map((msg) =>
           msg.id === assistantId
@@ -300,10 +302,10 @@ export function StylistChatPanel({
                   <StylistSparkIcon />
                 </div>
                 <h3 className="ds-display ds-display--sm stylist-warmup__title">
-                  AI Stylist is warming up
+                  AI not connected
                 </h3>
                 <p className="ds-body stylist-warmup__body">
-                  AI credentials not provided — this feature will be available shortly.
+                  The stylist is temporarily unavailable. Browse the shop or try again later.
                 </p>
               </div>
             ) : messages.length === 0 ? (

@@ -4,9 +4,16 @@ import { useLayoutEffect, useEffect, useState } from 'react';
 import { Button, Modal } from '@/components/ui';
 import { apiGet, apiSend } from '@/lib/api';
 import { useCart } from '@/components/cart/CartProvider';
-import { EXIT_INTENT_KEY } from './exit-intent-boot';
+import { exitIntentSuppressed, markExitIntentShown } from './exit-intent-boot';
 
 const EXIT_CODE = 'WELCOME10';
+
+function fireExitIntentTrigger(show: () => void) {
+  if (exitIntentSuppressed()) return;
+  markExitIntentShown();
+  window.__STUDIO_EXIT_PENDING = true;
+  show();
+}
 
 export function ExitIntent() {
   const { sessionId } = useCart();
@@ -19,16 +26,11 @@ export function ExitIntent() {
     // Boot script may have fired before hydrate (e2e mouseleave race).
     if (typeof window !== 'undefined' && window.__STUDIO_EXIT_PENDING) {
       show();
+      window.__STUDIO_EXIT_PENDING = false;
     }
     window.addEventListener('studio:exit-intent', show);
 
-    // Fallback if boot script missing (e.g. partial navigate).
-    const trigger = () => {
-      if (sessionStorage.getItem(EXIT_INTENT_KEY)) return;
-      sessionStorage.setItem(EXIT_INTENT_KEY, '1');
-      window.__STUDIO_EXIT_PENDING = true;
-      show();
-    };
+    const trigger = () => fireExitIntentTrigger(show);
     const onMove = (e: MouseEvent) => {
       if (e.clientY <= 10) trigger();
     };

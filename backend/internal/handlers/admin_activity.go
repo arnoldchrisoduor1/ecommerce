@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,6 +16,11 @@ var activityAdminTypes = map[string]bool{
 	"wishlist_add":       true,
 	"cart_add":           true,
 	"newsletter_signup":  true,
+}
+
+// activityNotificationTypes are high-signal events (red badge when unread).
+var activityNotificationTypes = map[string]bool{
+	"purchase": true,
 }
 
 type adminActivityEvent struct {
@@ -327,6 +333,50 @@ func (h *Handler) AdminActivityExportCSV(c *fiber.Ctx) error {
 		))
 	}
 	return c.SendString(b.String())
+}
+
+func (h *Handler) adminActivityLastReadAt(ctx context.Context) (time.Time, error) {
+	var ts time.Time
+	err := h.db.QueryRow(ctx, `SELECT last_read_at FROM admin_activity_state WHERE id = 1`).Scan(&ts)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return ts, nil
+}
+
+// AdminActivityUnread returns unread activity counts since last admin visit.
+func (h *Handler) AdminActivityUnread(c *fiber.Ctx) error {
+	lastRead, err := h.adminActivityLastReadAt(c.Context())
+	if err != nil {
+		return internalError(c, "AdminActivityUnread last_read", err)
+	}
+	var total, notifications int64
+	err = h.db.QueryRow(c.Context(), `
+		SELECT
+			COUNT(*)::bigint,
+			COUNT(*) FILTER (WHERE type = 'purchase')::bigint
+		FROM activity_events
+		WHERE created_at > $1`, lastRead,
+	).Scan(&total, &notifications)
+	if err != nil {
+		return internalError(c, "AdminActivityUnread count", err)
+	}
+	return c.JSON(fiber.Map{
+		"unread":        total,
+		"notifications": notifications,
+	})
+}
+
+// AdminMarkActivityRead marks all current activity as read (sidebar badge clears).
+func (h *Handler) AdminMarkActivityRead(c *fiber.Ctx) error {
+	_, err := h.db.Exec(c.Context(), `
+		UPDATE admin_activity_state
+		SET last_read_at = now(), updated_at = now()
+		WHERE id = 1`)
+	if err != nil {
+		return internalError(c, "AdminMarkActivityRead update", err)
+	}
+	return c.JSON(fiber.Map{"ok": true, "unread": 0, "notifications": 0})
 }
 
 func csvEscape(s string) string {

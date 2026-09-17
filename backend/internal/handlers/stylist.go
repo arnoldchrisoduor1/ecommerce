@@ -2,20 +2,21 @@ package handlers
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"log"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"ecommerce-backend/internal/openrouter"
 )
 
 type stylistChatRequest struct {
-	Message string `json:"message"`
+	Message   string `json:"message"`
+	SessionID string `json:"session_id"`
 }
 
 type styleQuizRequest struct {
@@ -23,57 +24,33 @@ type styleQuizRequest struct {
 	Answers   map[string]any `json:"answers"`
 }
 
-func anthropicAPIKey() (string, error) {
-	key := os.Getenv("ANTHROPIC_API_KEY")
-	if key == "" {
-		return "", fmt.Errorf("ANTHROPIC_API_KEY not set")
+const stylistMaxTokens = 400
+
+func stylistMockMode() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("AI_STYLIST_MOCK_MODE")), "true")
+}
+
+func stylistConfigured() bool {
+	if stylistMockMode() {
+		return true
 	}
-	return key, nil
+	key := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+	if key == "" {
+		return false
+	}
+	model := openrouter.ResolveModel(os.Getenv("OPENROUTER_MODEL"))
+	return !openrouter.IsAnthropicModel(model)
 }
 
 // StylistStatus reports whether AI credentials are present (no secrets leaked).
 func (h *Handler) StylistStatus(c *fiber.Ctx) error {
-	_, err := anthropicAPIKey()
-	return c.JSON(fiber.Map{"configured": err == nil})
+	return c.JSON(fiber.Map{
+		"configured": stylistConfigured(),
+		"mock_mode":  stylistMockMode(),
+	})
 }
 
-func anthropicModel() string {
-	if m := os.Getenv("ANTHROPIC_MODEL"); m != "" {
-		return m
-	}
-	return "claude-sonnet-4-20250514"
-}
-
-func (h *Handler) loadProductCatalogContext(c *fiber.Ctx) (string, error) {
-	rows, err := h.db.Query(c.Context(), `
-		SELECT p.name, p.slug, COALESCE(p.sale_price, p.base_price)::float8,
-			COALESCE(p.material, ''), COALESCE(p.description, '')
-		FROM products p
-		WHERE p.status = 'active' AND p.is_bundle = false
-		ORDER BY p.created_at DESC
-		LIMIT 40`)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-
-	var b strings.Builder
-	b.WriteString("Active catalog (name | slug | price KES | material | description snippet):\n")
-	for rows.Next() {
-		var name, slug, material, desc string
-		var price float64
-		if err := rows.Scan(&name, &slug, &price, &material, &desc); err != nil {
-			return "", err
-		}
-		if len(desc) > 120 {
-			desc = desc[:120] + "..."
-		}
-		fmt.Fprintf(&b, "- %s | %s | %.2f | %s | %s\n", name, slug, price, material, desc)
-	}
-	return b.String(), rows.Err()
-}
-
-// StylistChat streams a catalog-grounded styling answer from Claude.
+// StylistChat streams a catalog-grounded styling answer via OpenRouter.
 func (h *Handler) StylistChat(c *fiber.Ctx) error {
 	var req stylistChatRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -83,78 +60,83 @@ func (h *Handler) StylistChat(c *fiber.Ctx) error {
 		return badRequest(c, "message is required")
 	}
 
-	apiKey, err := anthropicAPIKey()
+	if !stylistConfigured() {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "AI not connected"})
+	}
+	if err := h.enforceAIAccess(c); err != nil {
+		return err
+	}
+
+	storeContext, err := h.buildStylistContext(c, req.Message)
 	if err != nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "stylist not configured"})
+		return internalError(c, "StylistChat context", err)
+	}
+	systemPrompt := stylistSystemPrompt(storeContext)
+	log.Printf("stylist system prompt (%d bytes): %s", len(systemPrompt), systemPrompt)
+
+	if stylistMockMode() {
+		return h.streamMockStylist(c, req.Message, storeContext)
 	}
 
-	catalog, err := h.loadProductCatalogContext(c)
+	client, err := openrouter.NewFromEnv()
 	if err != nil {
-		return internalError(c, "StylistChat catalog", err)
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "AI not connected"})
 	}
 
-	systemPrompt := "You are a fashion stylist for a women's basics storefront. Recommend ONLY products from the catalog below. Mention product names and slugs. Keep answers concise and actionable.\n\n" + catalog
-
-	payload := map[string]any{
-		"model":      anthropicModel(),
-		"max_tokens": 1024,
-		"stream":     true,
-		"system":     systemPrompt,
-		"messages": []map[string]string{
-			{"role": "user", "content": req.Message},
-		},
-	}
-	body, _ := json.Marshal(payload)
-
-	httpReq, err := http.NewRequestWithContext(c.Context(), http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return internalError(c, "StylistChat build request", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", apiKey)
-	httpReq.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := http.DefaultClient.Do(httpReq)
-	if err != nil {
-		return internalError(c, "StylistChat anthropic request", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": string(b)})
-	}
+	userID, _ := c.Locals(ctxUserIDKey).(string)
+	sessionID := req.SessionID
+	reqCtx := c.Context()
 
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
+		var full strings.Builder
+		usage, err := client.StreamChat(reqCtx, systemPrompt, req.Message, stylistMaxTokens, func(text string) error {
+			full.WriteString(text)
+			chunk, _ := json.Marshal(fiber.Map{"text": text})
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", chunk); err != nil {
+				return err
 			}
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				break
-			}
-			var event struct {
-				Type  string `json:"type"`
-				Delta struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"delta"`
-			}
-			if err := json.Unmarshal([]byte(data), &event); err != nil {
-				continue
-			}
-			if event.Type == "content_block_delta" && event.Delta.Text != "" {
-				chunk, _ := json.Marshal(fiber.Map{"text": event.Delta.Text})
-				fmt.Fprintf(w, "data: %s\n\n", chunk)
-				_ = w.Flush()
-			}
+			return w.Flush()
+		})
+		if err != nil {
+			log.Printf("stylist openrouter error: %v", err)
+			errChunk, _ := json.Marshal(fiber.Map{"error": "AI not connected"})
+			fmt.Fprintf(w, "data: %s\n\n", errChunk)
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			_ = w.Flush()
+			return
+		}
+		cost := 0.0
+		prompt, completion := 0, 0
+		if usage != nil {
+			prompt = usage.PromptTokens
+			completion = usage.CompletionTokens
+			cost = usage.Cost
+		}
+		h.logAIUsage(reqCtx, userID, sessionID, "stylist", client.Model(), prompt, completion, cost)
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		_ = w.Flush()
+	})
+	return nil
+}
+
+func (h *Handler) streamMockStylist(c *fiber.Ctx, userMessage, storeContext string) error {
+	reply := mockStylistReply(userMessage, storeContext)
+	log.Printf("stylist mock mode: zero API tokens used")
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		for _, word := range strings.Fields(reply) {
+			chunk, _ := json.Marshal(fiber.Map{"text": word + " "})
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			_ = w.Flush()
+			time.Sleep(15 * time.Millisecond)
 		}
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 		_ = w.Flush()

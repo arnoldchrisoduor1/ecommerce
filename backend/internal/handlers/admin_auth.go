@@ -33,7 +33,11 @@ func (h *Handler) AdminLogin(c *fiber.Ctx) error {
 		})
 	}
 
-	if !auth.ValidateAdminCredentials(cfg, req.Email, req.Password) {
+	ok, err := h.validateAdminPassword(c.Context(), req.Email, req.Password)
+	if err != nil {
+		return internalError(c, "AdminLogin validate", err)
+	}
+	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid credentials"})
 	}
 

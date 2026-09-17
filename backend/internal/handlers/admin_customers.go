@@ -34,11 +34,16 @@ func (h *Handler) AdminListCustomers(c *fiber.Ctx) error {
 			COALESCE(ls.last_seen >= now() - interval '5 minutes', false) AS online
 		FROM customers c
 		LEFT JOIN LATERAL (
-			SELECT s.last_seen
-			FROM sessions s
-			WHERE s.user_id = c.id
-			ORDER BY s.last_seen DESC
-			LIMIT 1
+			SELECT MAX(ts) AS last_seen
+			FROM (
+				SELECT s.last_seen AS ts
+				FROM sessions s
+				WHERE s.user_id = c.id
+				UNION ALL
+				SELECT pv.started_at AS ts
+				FROM page_views pv
+				WHERE pv.user_id = c.id
+			) activity
 		) ls ON true
 		ORDER BY c.created_at DESC`)
 	if err != nil {

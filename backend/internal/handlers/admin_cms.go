@@ -204,10 +204,29 @@ func (h *Handler) loadHighlightItem(c *fiber.Ctx, id string) (highlightItem, err
 }
 
 type adminHighlightSlideInput struct {
-	ImageURL        string `json:"image_url"`
-	Caption         string `json:"caption"`
-	CaptionPosition string `json:"caption_position"`
-	SortOrder       *int   `json:"sort_order"`
+	ImageURL        string  `json:"image_url"`
+	Caption         string  `json:"caption"`
+	CaptionPosition string  `json:"caption_position"`
+	SortOrder       *int    `json:"sort_order"`
+	ProductID       *string `json:"product_id"`
+}
+
+func (h *Handler) resolveHighlightSlideProductID(c *fiber.Ctx, productID *string) (*string, error) {
+	if productID == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*productID)
+	if trimmed == "" {
+		return nil, nil
+	}
+	var exists bool
+	if err := h.db.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM products WHERE id = $1)`, trimmed).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("product not found")
+	}
+	return &trimmed, nil
 }
 
 type adminHighlightSlidesReorderInput struct {
@@ -225,6 +244,13 @@ func (h *Handler) AdminCreateHighlightSlide(c *fiber.Ctx) error {
 	}
 	req.ImageURL = h.normalizeMedia(req.ImageURL)
 	pos := normalizeCaptionPosition(req.CaptionPosition)
+	productID, err := h.resolveHighlightSlideProductID(c, req.ProductID)
+	if err != nil {
+		if err.Error() == "product not found" {
+			return badRequest(c, "product not found")
+		}
+		return internalError(c, "AdminCreateHighlightSlide product", err)
+	}
 
 	var exists bool
 	if err := h.db.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM highlights WHERE id = $1)`, highlightID).Scan(&exists); err != nil {
@@ -244,16 +270,19 @@ func (h *Handler) AdminCreateHighlightSlide(c *fiber.Ctx) error {
 	}
 
 	var slide highlightSlideItem
-	err := h.db.QueryRow(c.Context(), `
-		INSERT INTO highlight_slides (highlight_id, image_url, caption, caption_position, sort_order)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, image_url, caption, caption_position, sort_order`,
-		highlightID, req.ImageURL, req.Caption, pos, sortOrder,
-	).Scan(&slide.ID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder)
+	err = h.db.QueryRow(c.Context(), `
+		INSERT INTO highlight_slides (highlight_id, image_url, caption, caption_position, sort_order, product_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, image_url, caption, caption_position, sort_order, product_id`,
+		highlightID, req.ImageURL, req.Caption, pos, sortOrder, productID,
+	).Scan(&slide.ID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder, &slide.ProductID)
 	if err != nil {
 		return internalError(c, "AdminCreateHighlightSlide insert", err)
 	}
 	slide.ImageURL = h.expandMedia(slide.ImageURL)
+	if slide.ProductID != nil {
+		_ = h.db.QueryRow(c.Context(), `SELECT slug FROM products WHERE id = $1`, *slide.ProductID).Scan(&slide.ProductSlug)
+	}
 	_ = h.syncHighlightPrimaryMedia(c, highlightID)
 	return c.Status(fiber.StatusCreated).JSON(slide)
 }
@@ -270,14 +299,22 @@ func (h *Handler) AdminUpdateHighlightSlide(c *fiber.Ctx) error {
 	}
 	req.ImageURL = h.normalizeMedia(req.ImageURL)
 	pos := normalizeCaptionPosition(req.CaptionPosition)
+	productID, err := h.resolveHighlightSlideProductID(c, req.ProductID)
+	if err != nil {
+		if err.Error() == "product not found" {
+			return badRequest(c, "product not found")
+		}
+		return internalError(c, "AdminUpdateHighlightSlide product", err)
+	}
 	tag, err := h.db.Exec(c.Context(), `
 		UPDATE highlight_slides
 		SET image_url = $1,
 		    caption = $2,
 		    caption_position = $3,
-		    sort_order = CASE WHEN $4::int IS NULL THEN sort_order ELSE $4::int END
-		WHERE id = $5 AND highlight_id = $6`,
-		req.ImageURL, req.Caption, pos, req.SortOrder, slideID, highlightID)
+		    sort_order = CASE WHEN $4::int IS NULL THEN sort_order ELSE $4::int END,
+		    product_id = $5
+		WHERE id = $6 AND highlight_id = $7`,
+		req.ImageURL, req.Caption, pos, req.SortOrder, productID, slideID, highlightID)
 	if err != nil {
 		return internalError(c, "AdminUpdateHighlightSlide update", err)
 	}
@@ -287,9 +324,14 @@ func (h *Handler) AdminUpdateHighlightSlide(c *fiber.Ctx) error {
 
 	var slide highlightSlideItem
 	err = h.db.QueryRow(c.Context(), `
-		SELECT id, image_url, caption, caption_position, sort_order
-		FROM highlight_slides WHERE id = $1`, slideID,
-	).Scan(&slide.ID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder)
+		SELECT s.id, s.image_url, s.caption, s.caption_position, s.sort_order, s.product_id, p.slug
+		FROM highlight_slides s
+		LEFT JOIN products p ON p.id = s.product_id
+		WHERE s.id = $1`, slideID,
+	).Scan(
+		&slide.ID, &slide.ImageURL, &slide.Caption, &slide.CaptionPosition, &slide.SortOrder,
+		&slide.ProductID, &slide.ProductSlug,
+	)
 	if err != nil {
 		return internalError(c, "AdminUpdateHighlightSlide load", err)
 	}

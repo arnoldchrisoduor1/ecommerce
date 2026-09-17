@@ -179,9 +179,21 @@ export function SiteFooter({ categories = [] }: Props) {
           <span className="site-footer__pay-badge ds-caption">Visa</span>
           <span className="site-footer__pay-badge ds-caption">Mastercard</span>
         </div>
-        <p className="ds-caption site-footer__copy">
-          © {year} Studio. All rights reserved.
-        </p>
+        <div className="site-footer__legal">
+          <p className="ds-caption site-footer__copy">
+            © {year} Studio. All rights reserved.
+          </p>
+          <p className="ds-caption site-footer__dev-credit">
+            Site by{' '}
+            <a href="mailto:arnoldchrisoduor@gmail.com" className="site-footer__dev-link">
+              arnoldchrisoduor@gmail.com
+            </a>
+            {' · '}
+            <a href="tel:+254791165995" className="site-footer__dev-link">
+              +254 791 165 995
+            </a>
+          </p>
+        </div>
       </div>
     </footer>
   );

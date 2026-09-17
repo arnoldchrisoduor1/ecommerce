@@ -116,6 +116,41 @@ func nullIfEmpty(s string) *string {
 	return &s
 }
 
+func (h *Handler) resolveAnalyticsCustomerID(c *fiber.Ctx, reqUserID *string) *string {
+	if reqUserID != nil {
+		if trimmed := strings.TrimSpace(*reqUserID); trimmed != "" {
+			return &trimmed
+		}
+	}
+	userID, _ := c.Locals(ctxUserIDKey).(string)
+	if userID == "" {
+		return nil
+	}
+	var customerID *string
+	if err := h.db.QueryRow(c.Context(), `SELECT customer_id FROM users WHERE id = $1`, userID).Scan(&customerID); err != nil {
+		return nil
+	}
+	if customerID == nil || strings.TrimSpace(*customerID) == "" {
+		return nil
+	}
+	return customerID
+}
+
+func (h *Handler) touchAnalyticsSession(ctx context.Context, sessionID string, customerID *string) {
+	sid := strings.TrimSpace(sessionID)
+	if sid == "" {
+		return
+	}
+	if customerID != nil {
+		_, _ = h.db.Exec(ctx, `
+			UPDATE sessions
+			SET last_seen = now(), user_id = COALESCE(user_id, $2)
+			WHERE id = $1`, sid, *customerID)
+		return
+	}
+	_, _ = h.db.Exec(ctx, `UPDATE sessions SET last_seen = now() WHERE id = $1`, sid)
+}
+
 // AnalyticsStartPageView creates a page_views row (sync — returns id for heartbeats).
 func (h *Handler) AnalyticsStartPageView(c *fiber.Ctx) error {
 	var req analyticsStartRequest
@@ -134,8 +169,9 @@ func (h *Handler) AnalyticsStartPageView(c *fiber.Ctx) error {
 	ipHash := hashIP(c.IP())
 	ua := string(c.Request().Header.UserAgent())
 	entityType, entityID := h.resolveEntityFromPath(c.Context(), path, req.EntityType, req.EntityID)
+	customerID := h.resolveAnalyticsCustomerID(c, req.UserID)
 
-	if err := h.upsertAnalyticsSession(c.Context(), sessionID, ipHash, req.UserID); err != nil {
+	if err := h.upsertAnalyticsSession(c.Context(), sessionID, ipHash, customerID); err != nil {
 		return internalError(c, "AnalyticsStartPageView session", err)
 	}
 
@@ -146,7 +182,7 @@ func (h *Handler) AnalyticsStartPageView(c *fiber.Ctx) error {
 			referrer, user_agent, ip_hash
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id`,
-		sessionID, req.UserID, path, entityType, entityID,
+		sessionID, customerID, path, entityType, entityID,
 		req.Referrer, nullIfEmpty(ua), nullIfEmpty(ipHash),
 	).Scan(&id)
 	if err != nil {
@@ -178,6 +214,9 @@ func (h *Handler) AnalyticsHeartbeatPageView(c *fiber.Ctx) error {
 		seconds = *req.Seconds
 	}
 
+	customerID := h.resolveAnalyticsCustomerID(c, nil)
+	sid := strings.TrimSpace(req.SessionID)
+
 	// Non-blocking write relative to client UX — still sync here but cheap.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -193,13 +232,14 @@ func (h *Handler) AnalyticsHeartbeatPageView(c *fiber.Ctx) error {
 		if tag.RowsAffected() == 0 {
 			return
 		}
-		if sid := strings.TrimSpace(req.SessionID); sid != "" {
-			_, _ = h.db.Exec(ctx, `UPDATE sessions SET last_seen = now() WHERE id = $1`, sid)
-		} else {
-			_, _ = h.db.Exec(ctx, `
-				UPDATE sessions SET last_seen = now()
-				WHERE id = (SELECT session_id FROM page_views WHERE id = $1)`, viewID)
+		if sid == "" {
+			var sessionFromView string
+			if err := h.db.QueryRow(ctx, `SELECT session_id FROM page_views WHERE id = $1`, viewID).Scan(&sessionFromView); err == nil {
+				h.touchAnalyticsSession(ctx, sessionFromView, customerID)
+			}
+			return
 		}
+		h.touchAnalyticsSession(ctx, sid, customerID)
 	}()
 	return c.JSON(fiber.Map{"ok": true})
 }
@@ -220,6 +260,9 @@ func (h *Handler) AnalyticsClosePageView(c *fiber.Ctx) error {
 		extra = *req.Seconds
 	}
 
+	customerID := h.resolveAnalyticsCustomerID(c, nil)
+	sid := strings.TrimSpace(req.SessionID)
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -232,8 +275,8 @@ func (h *Handler) AnalyticsClosePageView(c *fiber.Ctx) error {
 			log.Printf("AnalyticsClosePageView: %v", err)
 			return
 		}
-		if sid := strings.TrimSpace(req.SessionID); sid != "" {
-			_, _ = h.db.Exec(ctx, `UPDATE sessions SET last_seen = now() WHERE id = $1`, sid)
+		if sid != "" {
+			h.touchAnalyticsSession(ctx, sid, customerID)
 		}
 	}()
 	return c.JSON(fiber.Map{"ok": true})

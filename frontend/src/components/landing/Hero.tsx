@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { HeroData } from '@/lib/api';
 import { heroSlides } from '@/lib/api';
+import { cropForBreakpoint } from '@/lib/heroCrop';
 
 type Props = {
   hero: HeroData;
@@ -26,7 +27,16 @@ export function Hero({ hero }: Props) {
       ? hero.media_interval_ms
       : 5500;
   const [active, setActive] = useState(0);
+  const [desktop, setDesktop] = useState(false);
   const slideKey = slides.map((s) => s.url).join('|');
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const sync = () => setDesktop(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
     setActive(0);
@@ -45,8 +55,7 @@ export function Hero({ hero }: Props) {
       {slides.length ? (
         <div className="hero__media-stack" aria-hidden="true">
           {slides.map((slide, i) => {
-            const fx = slide.focal_x ?? 0.5;
-            const fy = slide.focal_y ?? 0.5;
+            const crop = cropForBreakpoint(slide, desktop);
             const srcSet = srcSetFor(slide.url);
             return (
               <div
@@ -54,8 +63,10 @@ export function Hero({ hero }: Props) {
                 className={`hero__frame${i === active ? ' hero__frame--active' : ''}`}
                 style={
                   {
-                    '--hero-focal-x': String(fx),
-                    '--hero-focal-y': String(fy),
+                    '--hero-crop-x': String(crop.x),
+                    '--hero-crop-y': String(crop.y),
+                    '--hero-crop-w': String(crop.w),
+                    '--hero-crop-h': String(crop.h),
                   } as CSSProperties
                 }
               >

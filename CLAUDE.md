@@ -27,7 +27,7 @@ cd tests && npm install && npx playwright test
 - **Admin API:** `backend/internal/routes/admin.go` → `/api/admin/*` (JWT via `POST /api/admin/login`)
 - **Presence:** Redis sorted sets (`presence:product:<id>`)
 - **Stylist:** Claude API streaming when `ANTHROPIC_API_KEY` set; style quiz answers in Redis (no quiz table in V1)
-- **Admin auth:** env-based single admin (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_JWT_SECRET`) — no `admin_users` table
+- **Admin auth:** env-based single admin (`ADMIN_EMAIL`, `ADMIN_JWT_SECRET`); password seeded once from `ADMIN_DEFAULT_PASSWORD` (or `ADMIN_PASSWORD`) into `admin_credentials` on first API boot. Change via `/admin/settings` (2FA code required).
 - **Frontend:** Next.js planned; not implemented past backend gate — see `docs/backend_test_results.md`
 
 ## Spec

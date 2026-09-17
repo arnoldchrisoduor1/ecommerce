@@ -1,5 +1,8 @@
+'use client';
+
 import Link from 'next/link';
 import { ProductCard } from '@/components/product/ProductCard';
+import { ProductPresenceProvider } from '@/components/product/ProductPresenceProvider';
 import type { ProductListItem } from '@/lib/api';
 
 type Props = {
@@ -21,11 +24,13 @@ export function ProductShelf({ title, products, seeAllHref = '/shop' }: Props) {
           View all
         </Link>
       </div>
-      <div className="shelf__grid">
-        {products.map((p) => (
-          <ProductCard key={p.id} product={p} />
-        ))}
-      </div>
+      <ProductPresenceProvider productIds={products.map((p) => p.id)}>
+        <div className="shelf__grid">
+          {products.map((p) => (
+            <ProductCard key={p.id} product={p} />
+          ))}
+        </div>
+      </ProductPresenceProvider>
     </section>
   );
 }

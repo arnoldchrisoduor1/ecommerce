@@ -1,4 +1,8 @@
+'use client';
+
 import Link from 'next/link';
+import { BlogPresenceProvider } from '@/components/blog/BlogPresenceProvider';
+import { BlogReadingOverlay } from '@/components/blog/BlogReadingOverlay';
 import type { BlogPost } from '@/lib/api';
 
 type Props = {
@@ -8,40 +12,47 @@ type Props = {
 export function BlogPreview({ posts }: Props) {
   if (posts.length === 0) return null;
 
+  const postIds = posts.map((p) => p.id);
+
   return (
-    <section className="blog-preview" aria-labelledby="blog-heading">
-      <div className="shelf__header">
-        <h2 id="blog-heading" className="ds-display ds-display--md">
-          Style guide
-        </h2>
-        <Link href="/blog" className="ds-label shelf__link">
-          Read more
-        </Link>
-      </div>
-      <ul className="blog-preview__list">
-        {posts.map((p) => (
-          <li key={p.id}>
-            <Link href={`/blog/${p.slug}`} className="blog-preview__card">
-              {p.cover_image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={p.cover_image}
-                  alt=""
-                  className="blog-preview__cover"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : (
-                <div className="blog-preview__cover blog-preview__cover--empty" aria-hidden="true" />
-              )}
-              <span className="ds-display ds-display--sm">{p.title}</span>
-              <span className="ds-caption blog-preview__reads">
-                {p.total_reads === 1 ? '1 read' : `${p.total_reads ?? 0} reads`}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <BlogPresenceProvider postIds={postIds}>
+      <section className="blog-preview" aria-labelledby="blog-heading">
+        <div className="shelf__header">
+          <h2 id="blog-heading" className="ds-display ds-display--md">
+            Style guide
+          </h2>
+          <Link href="/blog" className="ds-label shelf__link">
+            Read more
+          </Link>
+        </div>
+        <ul className="blog-preview__list">
+          {posts.map((p) => (
+            <li key={p.id}>
+              <Link href={`/blog/${p.slug}`} className="blog-preview__card">
+                <div className="blog-preview__cover-wrap">
+                  {p.cover_image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.cover_image}
+                      alt=""
+                      className="blog-preview__cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="blog-preview__cover blog-preview__cover--empty" aria-hidden="true" />
+                  )}
+                  <BlogReadingOverlay postId={p.id} />
+                </div>
+                <span className="ds-display ds-display--sm">{p.title}</span>
+                <span className="ds-caption blog-preview__reads">
+                  {p.total_reads === 1 ? '1 read' : `${p.total_reads ?? 0} reads`}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </BlogPresenceProvider>
   );
 }

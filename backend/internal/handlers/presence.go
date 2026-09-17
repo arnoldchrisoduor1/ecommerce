@@ -75,3 +75,53 @@ func (h *Handler) PresenceCount(c *fiber.Ctx) error {
 		"count":      count,
 	})
 }
+
+type presenceBatchRequest struct {
+	ProductIDs []string `json:"product_ids"`
+}
+
+// PresenceBatchCount returns live viewer counts for many products in one round trip.
+func (h *Handler) PresenceBatchCount(c *fiber.Ctx) error {
+	var req presenceBatchRequest
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+	if len(req.ProductIDs) == 0 {
+		return c.JSON(fiber.Map{"counts": fiber.Map{}})
+	}
+	if len(req.ProductIDs) > 100 {
+		return badRequest(c, "too many product ids (max 100)")
+	}
+
+	ttl := presenceTTL()
+	cutoff := strconv.FormatFloat(float64(time.Now().Add(-ttl).UnixMilli()), 'f', 0, 64)
+	ctx := c.Context()
+	pipe := h.rdb.Pipeline()
+	type cmdPair struct {
+		id   string
+		zcard *redis.IntCmd
+	}
+	pairs := make([]cmdPair, 0, len(req.ProductIDs))
+	for _, id := range req.ProductIDs {
+		if id == "" {
+			continue
+		}
+		key := presenceKey(id)
+		pipe.ZRemRangeByScore(ctx, key, "-inf", cutoff)
+		zcard := pipe.ZCard(ctx, key)
+		pairs = append(pairs, cmdPair{id: id, zcard: zcard})
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return internalError(c, "PresenceBatchCount pipeline", err)
+	}
+
+	counts := make(map[string]int64, len(pairs))
+	for _, p := range pairs {
+		n, err := p.zcard.Result()
+		if err != nil {
+			return internalError(c, "PresenceBatchCount zcard", err)
+		}
+		counts[p.id] = n
+	}
+	return c.JSON(fiber.Map{"counts": counts})
+}

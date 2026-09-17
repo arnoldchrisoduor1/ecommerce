@@ -1,21 +1,35 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { useAdminUi } from '@/components/admin/AdminUiProvider';
+import { HeroCropEditor } from '@/components/admin/HeroCropEditor';
 import { adminSend, adminUpload } from '@/lib/admin';
 import {
   apiGet,
   type ContentBlock,
+  type HeroCrop,
   type HeroData,
   type HeroSlide,
   heroSlides,
   parseBlockData,
 } from '@/lib/api';
+import {
+  defaultHeroCrop,
+  HERO_ASPECT_DESKTOP,
+  HERO_ASPECT_MOBILE,
+  normalizeCrop,
+} from '@/lib/heroCrop';
 import { Button } from '@/components/ui';
 
-function clamp01(n: number) {
-  return Math.min(1, Math.max(0, n));
+type CropBreakpoint = 'mobile' | 'desktop';
+
+function withDefaultCrops(slide: HeroSlide): HeroSlide {
+  return {
+    ...slide,
+    crop_mobile: normalizeCrop(slide.crop_mobile ?? defaultHeroCrop()),
+    crop_desktop: normalizeCrop(slide.crop_desktop ?? defaultHeroCrop()),
+  };
 }
 
 export function AdminHeroEditorClient() {
@@ -27,8 +41,8 @@ export function AdminHeroEditorClient() {
   const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [intervalSec, setIntervalSec] = useState('5.5');
   const [busy, setBusy] = useState(false);
-  const [focalIdx, setFocalIdx] = useState(0);
-  const previewRef = useRef<HTMLButtonElement>(null);
+  const [editIdx, setEditIdx] = useState(0);
+  const [cropBp, setCropBp] = useState<CropBreakpoint>('mobile');
 
   useEffect(() => {
     if (!ready) return;
@@ -38,7 +52,7 @@ export function AdminHeroEditorClient() {
       setSubheadline(data.subheadline || '');
       setCtaLabel(data.cta_label || '');
       setCtaUrl(data.cta_url || '');
-      setSlides(heroSlides(data));
+      setSlides(heroSlides(data).map(withDefaultCrops));
       setIntervalSec(
         String(
           typeof data.media_interval_ms === 'number'
@@ -54,6 +68,7 @@ export function AdminHeroEditorClient() {
     setBusy(true);
     try {
       const uploaded: HeroSlide[] = [];
+      const full = defaultHeroCrop();
       for (const file of Array.from(files)) {
         const form = new FormData();
         form.append('file', file);
@@ -66,11 +81,13 @@ export function AdminHeroEditorClient() {
           url: res.url || res.object_key,
           focal_x: 0.5,
           focal_y: 0.5,
+          crop_mobile: full,
+          crop_desktop: full,
         });
       }
       setSlides((prev) => {
         const next = [...prev, ...uploaded];
-        setFocalIdx(next.length - 1);
+        setEditIdx(next.length - 1);
         return next;
       });
       toast('Image uploaded', 'content-saved-toast');
@@ -89,21 +106,24 @@ export function AdminHeroEditorClient() {
       [next[idx], next[j]] = [next[j], next[idx]];
       return next;
     });
-    setFocalIdx((cur) => {
+    setEditIdx((cur) => {
       if (cur === idx) return idx + dir;
       if (cur === idx + dir) return idx;
       return cur;
     });
   }
 
-  function setFocalFromClick(e: React.MouseEvent<HTMLButtonElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const x = clamp01((e.clientX - rect.left) / rect.width);
-    const y = clamp01((e.clientY - rect.top) / rect.height);
+  function updateCrop(idx: number, bp: CropBreakpoint, crop: HeroCrop) {
     setSlides((prev) =>
       prev.map((s, i) =>
-        i === focalIdx ? { ...s, focal_x: x, focal_y: y } : s,
+        i === idx
+          ? {
+              ...s,
+              ...(bp === 'mobile'
+                ? { crop_mobile: normalizeCrop(crop) }
+                : { crop_desktop: normalizeCrop(crop) }),
+            }
+          : s,
       ),
     );
   }
@@ -115,14 +135,15 @@ export function AdminHeroEditorClient() {
       const secs = Number(intervalSec);
       const media_interval_ms =
         Number.isFinite(secs) && secs >= 2 ? Math.round(secs * 1000) : 5500;
-      const urls = slides.map((s) => s.url);
+      const normalized = slides.map(withDefaultCrops);
+      const urls = normalized.map((s) => s.url);
       await adminSend('/content/blocks/hero', 'PUT', {
         data: {
           headline,
           subheadline,
           cta_label: ctaLabel,
           cta_url: ctaUrl,
-          slides,
+          slides: normalized,
           media_urls: urls,
           media_url: urls[0] || '',
           media_interval_ms,
@@ -137,7 +158,11 @@ export function AdminHeroEditorClient() {
     }
   }
 
-  const active = slides[focalIdx];
+  const active = slides[editIdx];
+  const activeCrop =
+    cropBp === 'mobile'
+      ? normalizeCrop(active?.crop_mobile)
+      : normalizeCrop(active?.crop_desktop);
 
   return (
     <AdminShell title="Hero editor">
@@ -191,8 +216,8 @@ export function AdminHeroEditorClient() {
         <div className="admin-field">
           <span className="ds-label">Hero images</span>
           <p className="ds-caption">
-            Upload one or more images. Click a preview to set the focal point
-            (where the crop stays locked).
+            Upload images, pick a slide, then drag the crop box for mobile and desktop
+            breakpoints.
           </p>
           <input
             type="file"
@@ -213,18 +238,14 @@ export function AdminHeroEditorClient() {
                 <li key={`${slide.url}-${idx}`} className="admin-hero-slide">
                   <button
                     type="button"
-                    className={`admin-hero-slide__pick${idx === focalIdx ? ' admin-hero-slide__pick--active' : ''}`}
-                    onClick={() => setFocalIdx(idx)}
-                    aria-pressed={idx === focalIdx}
+                    className={`admin-hero-slide__pick${idx === editIdx ? ' admin-hero-slide__pick--active' : ''}`}
+                    onClick={() => setEditIdx(idx)}
+                    aria-pressed={idx === editIdx}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={slide.url} alt="" className="admin-hero-slide__img" />
                   </button>
                   <div className="admin-hero-slide__actions">
-                    <span className="ds-caption">
-                      Focal {((slide.focal_x ?? 0.5) * 100).toFixed(0)}% /{' '}
-                      {((slide.focal_y ?? 0.5) * 100).toFixed(0)}%
-                    </span>
                     <Button
                       type="button"
                       variant="ghost"
@@ -250,7 +271,7 @@ export function AdminHeroEditorClient() {
                       disabled={busy}
                       onClick={() => {
                         setSlides((prev) => prev.filter((_, i) => i !== idx));
-                        setFocalIdx((cur) =>
+                        setEditIdx((cur) =>
                           cur > idx ? cur - 1 : cur === idx ? Math.max(0, idx - 1) : cur,
                         );
                       }}
@@ -265,30 +286,34 @@ export function AdminHeroEditorClient() {
         </div>
 
         {active ? (
-          <div className="admin-field admin-hero-focal">
-            <span className="ds-label">Focal point</span>
-            <p className="ds-caption">
-              Click the image to set focus. Storefront uses this for crop position.
-            </p>
-            <button
-              ref={previewRef}
-              type="button"
-              className="admin-hero-focal__preview"
-              data-testid="hero-focal-preview"
-              onClick={setFocalFromClick}
-              aria-label="Set focal point"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={active.url} alt="" />
-              <span
-                className="admin-hero-focal__mark"
-                style={{
-                  left: `${(active.focal_x ?? 0.5) * 100}%`,
-                  top: `${(active.focal_y ?? 0.5) * 100}%`,
-                }}
-                aria-hidden="true"
-              />
-            </button>
+          <div className="admin-field admin-hero-crop-panel">
+            <span className="ds-label">Crop / reframe</span>
+            <div className="admin-hero-crop-panel__tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={cropBp === 'mobile'}
+                className={`admin-hero-crop-panel__tab${cropBp === 'mobile' ? ' admin-hero-crop-panel__tab--active' : ''}`}
+                onClick={() => setCropBp('mobile')}
+              >
+                Mobile (5:6)
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={cropBp === 'desktop'}
+                className={`admin-hero-crop-panel__tab${cropBp === 'desktop' ? ' admin-hero-crop-panel__tab--active' : ''}`}
+                onClick={() => setCropBp('desktop')}
+              >
+                Desktop (21:9)
+              </button>
+            </div>
+            <HeroCropEditor
+              url={active.url}
+              crop={activeCrop}
+              previewAspect={cropBp === 'mobile' ? HERO_ASPECT_MOBILE : HERO_ASPECT_DESKTOP}
+              onChange={(crop) => updateCrop(editIdx, cropBp, crop)}
+            />
           </div>
         ) : null}
 

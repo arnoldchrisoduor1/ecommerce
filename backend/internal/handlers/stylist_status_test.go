@@ -13,25 +13,43 @@ func TestStylistStatus(t *testing.T) {
 	cases := []struct {
 		name       string
 		key        string
+		mock       string
 		wantConfig bool
 	}{
-		{"missing key", "", false},
-		{"set key", "sk-test-key", true},
+		{"missing key no mock", "", "false", false},
+		{"set key", "sk-or-test-key", "false", true},
+		{"mock without key", "", "true", true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			prev, had := os.LookupEnv("ANTHROPIC_API_KEY")
+			prevKey, hadKey := os.LookupEnv("OPENROUTER_API_KEY")
+			prevMock, hadMock := os.LookupEnv("AI_STYLIST_MOCK_MODE")
+			prevModel, hadModel := os.LookupEnv("OPENROUTER_MODEL")
+
 			if tc.key == "" {
-				_ = os.Unsetenv("ANTHROPIC_API_KEY")
+				_ = os.Unsetenv("OPENROUTER_API_KEY")
 			} else {
-				t.Setenv("ANTHROPIC_API_KEY", tc.key)
+				t.Setenv("OPENROUTER_API_KEY", tc.key)
 			}
+			t.Setenv("AI_STYLIST_MOCK_MODE", tc.mock)
+			_ = os.Unsetenv("OPENROUTER_MODEL")
+
 			t.Cleanup(func() {
-				if had {
-					_ = os.Setenv("ANTHROPIC_API_KEY", prev)
+				if hadKey {
+					_ = os.Setenv("OPENROUTER_API_KEY", prevKey)
 				} else {
-					_ = os.Unsetenv("ANTHROPIC_API_KEY")
+					_ = os.Unsetenv("OPENROUTER_API_KEY")
+				}
+				if hadMock {
+					_ = os.Setenv("AI_STYLIST_MOCK_MODE", prevMock)
+				} else {
+					_ = os.Unsetenv("AI_STYLIST_MOCK_MODE")
+				}
+				if hadModel {
+					_ = os.Setenv("OPENROUTER_MODEL", prevModel)
+				} else {
+					_ = os.Unsetenv("OPENROUTER_MODEL")
 				}
 			})
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui';
 import { apiGet, apiSend } from '@/lib/api';
 import { useCart } from '@/components/cart/CartProvider';
+import { useProductPresenceBatch } from '@/components/product/ProductPresenceProvider';
 
 type Props = {
   productId: string;
@@ -43,13 +44,20 @@ export function ViewerBadge({
   overlay = false,
 }: Props) {
   const { sessionId } = useCart();
+  const batchCounts = useProductPresenceBatch();
+  const inBatchMode = batchCounts !== null;
   const [count, setCount] = useState(0);
   const [display, setDisplay] = useState(0);
   const [anim, setAnim] = useState(false);
   const prev = useRef(0);
 
   useEffect(() => {
-    if (!productId) return;
+    if (!inBatchMode || !productId) return;
+    setCount(batchCounts[productId] ?? 0);
+  }, [inBatchMode, batchCounts, productId]);
+
+  useEffect(() => {
+    if (inBatchMode || !productId) return;
     let cancelled = false;
 
     async function tick() {
@@ -78,7 +86,7 @@ export function ViewerBadge({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [productId, sessionId, heartbeat]);
+  }, [productId, sessionId, heartbeat, inBatchMode]);
 
   useEffect(() => {
     if (count === prev.current) {

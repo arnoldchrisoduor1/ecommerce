@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { ProductCard } from '@/components/product/ProductCard';
+import { ProductPresenceProvider } from '@/components/product/ProductPresenceProvider';
 import { apiGet, type Category, type ProductListItem } from '@/lib/api';
 
 const SUGGESTED = [
@@ -184,11 +185,13 @@ export function SearchClient({
       ) : null}
 
       {!loading && products.length > 0 ? (
-        <div className="shelf__grid" data-testid="search-grid">
-          {products.map((p) => (
-            <ProductCard key={p.id} product={p} showQuickView />
-          ))}
-        </div>
+        <ProductPresenceProvider productIds={products.map((p) => p.id)}>
+          <div className="shelf__grid" data-testid="search-grid">
+            {products.map((p) => (
+              <ProductCard key={p.id} product={p} showQuickView />
+            ))}
+          </div>
+        </ProductPresenceProvider>
       ) : null}
     </div>
   );

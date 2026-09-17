@@ -1,269 +1,314 @@
-- If a task is ambiguous or conflicts with existing code, STOP and ask before implementing. Do not guess schema names — read the existing models first.
-- Every new DB change goes in a numbered migration file. No hand-edited schemas.
-- All new backend endpoints get a table-driven Go test. All new analytics writes must be non-blocking (fire-and-forget goroutine or Redis queue) so they never slow a page render.
-- Reuse the existing theme tokens (the brown/warm palette). Do not introduce new hex codes outside the token file.
-
-Start by reading the repo and printing a short inventory: existing product model, existing admin routes, existing theme token file, existing newsletter storage, and whether any auth scaffolding already exists. Then begin Task 1.
+- Apply the ui-ux-pro-max skill for every UI change.
+- **Storage note:** if you hit a low-disk-space or "no space left on device" error at any point, you are authorized to run `docker system prune -a -f --volumes` (or equivalent) to reclaim space without asking first. Log that you did it and why in the task report, then retry the failed step. Do not prune anything else without asking.
+- Several tasks here are bug fixes on top of Tasks 10–17 (last-seen, newsletter emails, footer, discount timing). Read the actual current behavior first — don't assume the old implementation is correct, reproduce the bug, then fix it.
 
 ---
 
-## TASK 1 — Product search
+# Ecommerce Platform — Task 18 (Revised): AI Stylist with Business Context
 
-The top-nav search button currently 404s.
+Replace the earlier Task 18 spec with this version before implementing. If you already started the old version, adjust in place.
 
-- Backend: `GET /api/products/search?q=&page=&limit=` — case-insensitive partial match across product **name** and **description**. Use Postgres `ILIKE` with trigram index (`pg_trgm`, GIN index on both columns) so it stays fast. Rank name matches above description matches. Exclude unpublished/hidden products per existing visibility rules.
-- Frontend: `/search` page reading `?q=`. Shows result count, the same product card component used on listings, empty state ("No products match …" with 3–4 suggested categories), and a loading skeleton.
-- Nav search: debounced 250ms typeahead dropdown showing top 5 matches with thumbnail + name + price; Enter goes to the full `/search` page. Keyboard navigable (arrow keys, Escape closes).
+## Model selection
 
-**Verification:** curl the endpoint with (a) a term appearing only in a description, (b) a term appearing only in a name, (c) mixed case, (d) a nonsense string. Show all four outputs. Then confirm `/search?q=` renders results and the 404 is gone.
+- Model must be configurable via `OPENROUTER_MODEL` in `.env`, but default to one of OpenRouter's **cheap open-source models** — prioritize Chinese open-weight models (e.g. Qwen or DeepSeek families, whichever OpenRouter currently prices lowest per token) over anything else.
+- **Do not default to, fall back to, or ever call any Anthropic model** (no Claude models) through OpenRouter for this feature, under any circumstance, including error fallback chains.
+- Look up current OpenRouter pricing before picking the default — don't guess from memory, prices change. Pick the cheapest capable chat model available at implementation time and note the price per 1K tokens in the task report.
 
----
+## Token discipline during development
 
-## TASK 2 — Profile page restyle
+- Keep `max_tokens` on every stylist request capped low (e.g. 300–500) — this is a chat feature, not long-form generation.
+- Add a dev-only toggle (`AI_STYLIST_MOCK_MODE=true` in `.env`) that returns canned/fixture responses instead of calling OpenRouter at all, so the team can test UI/flow without burning real tokens. Default this OFF in the example env but ON is what should be used during this build/test phase — flag this clearly so it gets turned off before real client testing.
+- Do not add retry-on-every-keystroke or speculative pre-fetching — one request per user-sent message only.
+- Log token usage (prompt + completion) per request to server logs during development so actual spend is visible.
+- If
 
-- Apply the warm/brown theme properly: sectioned cards with subtle elevation, warm neutral surfaces, accent brown for primary actions only.
-- Tabs or a sidebar for Wishlist / Orders / Account, with the active state clearly marked.
-- Wishlist items: image, name, price, move-to-cart and remove actions.
-- Orders: status pill (colour-coded — pending / paid / shipped / delivered / cancelled), order number, date, total, expandable line items.
-- Proper empty states with an illustration or icon for each tab, not bare text.
-- Fully responsive; test at 375px, 768px, 1440px.
+## Business context (RAG-lite)
 
-**Verification:** Screenshot each tab at all three breakpoints, in both populated and empty states.
+The stylist should be able to answer with real awareness of the store, not generic fashion chat:
 
----
+- Give it read access to: current product catalog (name, category, price, stock status, tags/attributes), active discounts/promotions, and any store-wide policies configured in admin (e.g. free delivery threshold, active announcements).
+- Implementation: on each user message, pull a **compact, relevant** context snippet server-side (e.g. top-N products matching keywords in the user's message via the existing search index from Task 1, plus any currently-active discounts/announcements) and inject it into the system prompt — don't dump the entire catalog into every request, that wastes tokens and degrades quality. State how you selected what to include.
+- The assistant can therefore say things like "there's currently a discount on X" or "orders over [threshold] ship free" when relevant, sourced from real admin-configured data, not invented.
 
-## TASK 3 — AI stylist button, modal, and unconfigured state
+## Privacy — hard constraints
 
-- Replace the brown rectangle trigger with a properly designed floating action button: theme gradient or accent fill, icon + label, subtle idle animation (slow pulse or shimmer), hover lift, spring-in entrance. Respect `prefers-reduced-motion`.
-- Fix the modal close button: position it correctly inside the modal bounds (top-right, inset from the edge, above all content in z-order), min 44x44 hit target, hover state, and make Escape + backdrop click also close.
-- The AI backend isn't built yet. Replace the current "not configured" text with a themed empty state inside the modal: a stylist icon, heading "AI Stylist is warming up", body text "AI credentials not provided — this feature will be available shortly.", styled in theme colours, with the input area visibly disabled rather than absent.
+- **Never** include in the context or allow the model to reference: customer PII (other users' names, emails, order history, addresses), internal cost/margin data, admin credentials, API keys, or any `page_views`/`sessions`/analytics data.
+- The context assembled per-request must be scoped to public storefront data only (products, public pricing, public promotions, public policies) — nothing pulled from the auth, orders, or analytics tables described in earlier tasks.
+- If the user asks the assistant something that would require private data ("what did I order last time," "who else bought this"), the assistant should decline naturally in-character rather than being fed the data and told not to share it — keep the private data out of the prompt entirely, don't rely on the model to self-censor.
 
-**Verification:** Screenshot the button idle + hover, modal open, close via all three methods, and the unconfigured state.
+## Error handling (unchanged from before)
 
----
+- Any OpenRouter failure (timeout, 4xx/5xx, malformed response, missing key) → show **"AI not connected"** in the UI, no raw errors surfaced. One retry on 5xx/timeout, ~20s request timeout.
 
-## TASK 4 — Hero image cropping
+**Verification:**
 
-Full-body uploads render torso-only on desktop (fine on mobile).
-
-Root cause is a fixed desktop hero height plus `object-cover` centre-cropping a portrait image. Fix as follows:
-
-- Replace the fixed height with an aspect-ratio-driven container: portrait-friendly on mobile, and on desktop use a ratio that preserves the subject (e.g. `aspect-[16/9]` with the image sized to `h-full w-auto` inside a flex-centred container) — do not simply switch to `object-contain`, which will letterbox and break the layout.
-- Add `focal_x` / `focal_y` fields (0–1 floats, default 0.5/0.5) to the hero slide model and admin upload form, wired to `object-position: calc(focal_x*100%) calc(focal_y*100%)`. Give the admin a click-to-set focal point preview.
-- Serve responsive `srcset` sizes so desktop gets the full-resolution asset.
-- Do not change mobile behaviour — it already renders correctly. Verify it still does after the change.
-
-**Verification:** Load a known full-body portrait image. Screenshot the hero at 375 / 768 / 1440 / 1920 showing head and feet visible. Change the focal point in admin and screenshot the resulting shift.
+1. Show the `.env` config with the selected cheap model name and its current OpenRouter price per 1K tokens.
+2. With `AI_STYLIST_MOCK_MODE=true`, show the chat working end-to-end on fixture data with zero real API calls (confirm via logs/network tab).
+3. With mock mode off and a real key, ask the stylist something that should surface a real active discount or free-delivery threshold, and show it correctly referencing the actual admin-configured value.
+4. Ask it something that would require private customer data and show it declines without that data ever having been in the request payload — paste the actual system prompt/context sent for that request to prove it wasn't included.
+5. Confirm in code (grep/search) that no Anthropic model string appears anywhere in the OpenRouter call path, including any fallback list.
+6. Show the per-request token usage log for one real exchange.
 
 ---
 
-## TASK 5 — Modern footer
+## TASK 19 — Welcome/exit discount modal: 45s suppression window
 
-- Multi-column on desktop, accordion on mobile: brand blurb + logo, Shop (categories), Help (shipping, returns, contact, FAQ), Company (about, blog).
-- Newsletter signup with inline validation, loading state, success and duplicate-email states. Wire to the existing newsletter endpoint — do not create a new one, but confirm it persists the email (Task 16 depends on this).
-- Social icons, payment method badges, copyright line with dynamic year.
-- Warm dark surface from the theme tokens, generous vertical rhythm, subtle top border or gradient divider.
+- Keep existing trigger behavior unchanged.
+- Add: once the modal has been shown, it must not show again for 45 seconds, even if the trigger condition (exit intent, etc.) fires again. Store this as a timestamp (localStorage or a cookie — pick one and be consistent with how Task 8/19's other popups store state), not a boolean, so it naturally expires.
+- This is per-browser-session behavior, not server-side.
 
-**Verification:** Screenshot at all three breakpoints. Confirm the newsletter form hits the existing endpoint, shows all three states, and that the email lands in the database.
-
----
-
-## TASK 6 — Multi-image highlights with caption overlay
-
-- Schema: new `highlight_slides` table (`id`, `highlight_id`, `image_url`, `caption`, `caption_position`, `sort_order`). Migrate existing single images into it as slide 1. Do not drop the old column until the migration is verified.
-- Admin: add/reorder/delete slides per highlight (drag to reorder), caption text field per slide, position selector (top / centre / bottom).
-- Storefront: Instagram-story behaviour — segmented progress bars at the top (one per slide), auto-advance ~5s, tap left/right to navigate, swipe on mobile, pause on hold.
-- Caption overlays the image with a gradient scrim behind it for legibility, positioned per the slide's setting, with a readable text shadow.
-
-**Verification:** Create a highlight with 3 slides and captions. Show the progress bars advancing, tap navigation both directions, and caption legibility over both a light and a dark image. Confirm pre-existing single-image highlights still render.
+**Verification:** Trigger the modal, dismiss it, immediately re-trigger the same condition within 45s and confirm it does NOT reappear. Wait past 45s, re-trigger, confirm it does reappear.
 
 ---
 
-## TASK 7 — Viewer count overlay on PDP
+## TASK 20 — Demo mode contact mascot: rebuild to spec
 
-- Position: top-right of the main product image, inset ~16px, absolutely positioned above the image.
-- Style: theme background pill with slight transparency + backdrop blur, small pulsing dot, text like "12 viewing now".
-- Hide when the count is below a threshold (e.g. < 2) rather than showing "1 viewing".
-- Must not overlap the zoom control or wishlist icon — reposition those if needed.
-- Animate count changes (fade/slide the number, not a hard swap).
+The current implementation doesn't match what was asked. Rebuild:
 
-**Verification:** Screenshot on a product with a live count, and confirm it hides below threshold. Test on a light product image and a dark one for contrast.
+- **First page load in demo mode:** an animated contact element appears showing `arnoldchrisoduor@gmail.com` and `+254791165995`, clearly visible, well-animated entrance (not a plain fade).
+- After a few seconds (or on dismiss — pick one, state which), it **animates/transitions to a docked icon at the middle-right edge of the screen** (vertically centered, right edge — not bottom-right where the stylist FAB and back-to-top live).
+- Periodically (less frequently than the discount modal — e.g. every 2–3 minutes), it re-expands briefly showing the contact details again (icon → card → back to icon), same idea as the discount popup but on its own independent timer.
+- Respects `prefers-reduced-motion`.
+- Must not overlap the stylist FAB, back-to-top button, or cart controls at any breakpoint — reuse/extend the shared stacking-order logic from the earlier mascot task.
+- Only renders when `APP_MODE=demo`; confirm again it tree-shakes out of a production build.
 
----
-
-## TASK 8 — Social proof activity ticker (storefront)
-
-Between the hero and New Arrivals, add a continuously scrolling activity ticker fed by **real** events — no seeded or fake data.
-
-- Backend: `GET /api/activity/recent?limit=20` returning real recent events of types: `purchase`, `wishlist_add`, `cart_add`, `newsletter_signup`.
-- **Public payload contains first name + item name only.** Never surname, email, order value, or user ID. If a user has no first name, fall back to "Someone".
-- No time filter — return the most recent N regardless of age, so the ticker is never empty. If fewer than N exist, loop what's available.
-- Messages: "Carol bought {item}", "Kevin saved {item}", "Francie added {item} to cart", "{name} signed up for the newsletter". Each row: small product thumbnail (or an icon for newsletter events), the message, and a relative timestamp.
-- Frontend: horizontal marquee, seamless infinite loop, pauses on hover, respects `prefers-reduced-motion` (falls back to a static row or slow fade rotation). Cache the response in Redis for 30s.
-- Render nothing at all if the endpoint returns zero events — never render an empty container.
-- Persist every one of these events to an `activity_events` table (`id`, `type`, `user_id`, `product_id`, `order_id`, `price_at_event`, `created_at`) — Task 15 reads from it. Emit the event from the existing purchase / wishlist / cart / newsletter handlers rather than a separate tracking call.
-
-**Verification:** Perform one real action of each of the four types and show them appearing in the ticker. Show the raw endpoint output and confirm no surname, email, price, or ID is present. Confirm the loop is seamless and hover-pause works.
+**Verification:** Screenshot the full sequence — first-load reveal, dock-to-middle-right, and one periodic re-expansion (you can temporarily shorten the timer to demo this, then restore it). Confirm no overlap with other pinned UI at 375px and 1440px. Rebuild with `APP_MODE=production` and grep the bundle to confirm none of this ships.
 
 ---
 
-## TASK 9 — Back-to-top button
+## TASK 21 — AI virtual try-on ("Try with AI") in Quick View
 
-- Appears after ~600px scroll, fades/slides in, bottom-right, offset so it never collides with the AI stylist FAB or the demo mascot from Task 17 (define a single shared stacking order for all three).
-- Smooth scroll to top, theme-styled circular button with a hover lift.
-- Respects `prefers-reduced-motion` (instant jump instead of smooth scroll).
+- In the product Quick View, add a "Try with AI" section: user uploads a photo of themselves, the AI composites/renders the selected garment onto them, result is shown in the modal with a **Download** button.
+- Use OpenRouter (or a suitable image-capable model/provider reachable through it) for the generation call. Handle failure the same way as Task 18 — clean "AI not connected" (or a try-on-specific equivalent) message, no raw errors.
+- **Gate this feature behind a verified account with 2FA enabled.** If the user isn't logged in, route them through the existing auth modal (Task 13's pending-action queue). If they're logged in but don't have 2FA enabled, block the try-on with a clear message ("Two-step verification is required for this feature") and a direct link to enable it in their profile — do not silently fail or let them proceed without it.
+- Store nothing of the uploaded photo beyond what's needed to serve the immediate response — do not persist user-uploaded try-on photos to permanent storage or the DB. State clearly in the report what temporary storage (if any) is used and its cleanup/expiry.
+- Show a loading state during generation (this will be slow) and a clear error state on failure.
 
-**Verification:** Screenshot showing the button and the stylist FAB coexisting without overlap, at mobile and desktop.
-
----
-
-## TASK 10 — Admin: most-viewed products + per-user view detail
-
-First, build the shared analytics foundation that Tasks 10, 11 and 14 all depend on:
-
-- Table `page_views`: `id`, `session_id`, `user_id` (nullable), `path`, `entity_type` (product/blog/page), `entity_id` (nullable), `started_at`, `ended_at`, `duration_seconds`, `referrer`, `user_agent`, `ip_hash`.
-- Table `sessions`: `id`, `user_id` (nullable), `first_seen`, `last_seen`, `ip_hash`.
-- Frontend sends a heartbeat every 15s while a page is visible (use the Page Visibility API so background tabs don't inflate numbers) and a `sendBeacon` on unload to close the record.
-- Writes must be non-blocking. Index on `(entity_type, entity_id, started_at)` and `(user_id, started_at)`.
-
-Then, in the admin Overview:
-
-- "Most Viewed Products" table: rank, thumbnail, name, total views, unique viewers, avg time on page, with a date-range selector.
-- Clicking a row opens a modal listing each viewer: name (or "Guest · session abc123" for anonymous), view count, total time spent, last viewed. Sortable, paginated.
-
-**Verification:** Browse 3 products in different tabs for varying durations. Show the Overview table reflecting it, and open the modal showing your own session with correct counts and durations. Confirm background tabs did not accumulate time.
+**Verification:** (1) As a guest, click "Try with AI" and confirm the auth flow triggers. (2) As a logged-in user without 2FA, confirm the block message and link to enable 2FA. (3) As a user with 2FA enabled, upload a photo and show a real generated result with a working download. (4) Force an API failure and show the clean error state. (5) Confirm the uploaded photo is not present in permanent storage after the request completes.
 
 ---
 
-## TASK 11 — Admin: traffic and presence tracking
+## TASK 22 — Admin highlights section: layout remodel
 
-- "Most Visited Pages" table: path, views, unique visitors, avg duration, for a selectable range.
-- Active users counters: last 1 hour / 12 hours / 24 hours / 7 days / 30 days, as stat cards with a sparkline trend.
-- "Currently online" count (sessions with a heartbeat in the last 5 minutes), live-updating via polling every 30s.
-- Customers list gains a "Last seen" column with relative time and a green dot for currently-online.
-- Cache the aggregate counters in Redis with a 60s TTL — do not recompute on every dashboard load.
+- Reorganize the admin highlights editor into clearly separated, ordered sections: highlight metadata, slide list (in order), and per-slide fields — visually distinct, not a jumbled form.
+- Caption field/preview: caption must always render **horizontally centered** in the overlay, regardless of the `caption_position` (top/centre/bottom) set in Task 6 — vertical position still varies, horizontal is always centered. Update the storefront overlay to match.
+- Change the caption's background treatment to **black at high opacity** (not a gradient scrim) so it doesn't obscure the image — pick an opacity that keeps text legible without washing out the photo underneath it.
+- Each slide gets an optional "link to product" field; if set, the image (both in admin preview and storefront) links to that product's page.
 
-**Verification:** Show each counter with real numbers. Open a second browser session and confirm "currently online" increments, then decrements after the timeout.
-
----
-
-## TASK 12 — Admin colour pass
-
-- Apply the theme palette as an admin variant: warm neutral surfaces, brown accent for primary actions and active nav, semantic colours for status (green success, amber warning, red danger, blue info).
-- Stat cards get accent left-borders or tinted icon chips. Charts use a coherent theme-derived palette, not library defaults.
-- Sidebar: clear active state, hover states, section grouping.
-- Tables: zebra striping, hover rows, coloured status pills.
-- Keep all text contrast at WCAG AA minimum. Do not sacrifice legibility for colour.
-
-**Verification:** Screenshot every admin page before and after. Run a contrast check on the primary text/background and accent/background pairs and report the ratios.
+**Verification:** Screenshot the remodeled admin editor showing clear sectioning. Screenshot a storefront highlight with caption centered horizontally at top, centre, and bottom positions, over both a light and dark image, confirming the image stays visible underneath. Click a linked slide image on the storefront and confirm it navigates to the correct product.
 
 ---
 
-## TASK 13 — Authentication with action gating and optional email 2FA
+## TASK 23 — Highlights on home page: centering
 
-The system currently has no auth. Build it.
+- The highlights reel on the home page currently starts left-aligned. Center it horizontally in its container, matching how the categories row at the top is centered.
+- Preserve existing scroll/swipe behavior if the row overflows on smaller screens (centered content can still allow horizontal scroll when it doesn't fit).
 
-**Architecture:**
-- Backend: email + password (bcrypt, cost 12), JWT access token (15 min) in memory + refresh token (30 days) in an httpOnly, Secure, SameSite=Lax cookie. Refresh rotation with reuse detection.
-- Tables: `users`, `refresh_tokens`, `verification_codes` (`user_id`, `code_hash`, `purpose`, `expires_at`, `attempts`, `consumed_at`).
-- Endpoints: register, login, logout, refresh, me, request-code, verify-code, resend-code, forgot-password, reset-password.
-- Rate limit by IP and by email: 5 login attempts / 15 min, 3 code requests / 15 min. Return generic errors — never reveal whether an email exists.
-
-**Action gating:**
-Browsing stays fully open. Auth is required only for: add to wishlist, save item, place order, and any profile page.
-Implement a **pending-action queue**: when a guest clicks a gated action, store the intended action (type + payload) in client state, open the auth modal, and on successful auth **replay the action automatically** and show a confirmation toast. The user must never have to click the same button twice.
-
-**2FA — optional, suggested at signup:**
-- 2FA is **never mandatory** for any action, including orders.
-- Immediately after successful account creation, show a well-designed suggestion step: a short benefit line ("Add an extra layer of security to your account"), an "Enable two-step verification" primary button, and a clearly visible "Maybe later" secondary. Skipping must take one click and must not re-prompt on every login — at most one gentle reminder banner in the profile page afterwards, dismissible for good.
-- Store the choice on the user record (`two_factor_enabled`, `two_factor_prompted_at`). Toggleable any time from the profile.
-- 2FA **is** always required for password reset, regardless of the user's setting.
-
-**Pages/components:**
-- Auth modal with Login / Create Account tabs (also available as standalone `/login`, `/signup`, `/verify` routes for direct links and email flows).
-- Password strength meter on signup, show/hide toggle, inline validation.
-- Verification page: 5 separate digit inputs with auto-advance, paste support for the full code, auto-submit on completion, 60s resend cooldown with a visible countdown, clear error state on wrong code, lockout after 5 wrong attempts.
-- Codes: 5 digits, 10 minute expiry, single-use, hashed at rest, sent via the existing mailer microservice with a templated branded email.
-
-**Verification:** Demonstrate end to end — (1) guest clicks wishlist → modal → signup → 2FA suggestion appears → "Maybe later" → wishlist item is added automatically without re-clicking; (2) a second signup that enables 2FA, receives the code, and verifies; (3) confirm a 2FA-disabled user can place an order without any code prompt; (4) logout clears state; (5) wrong code 5x locks out; (6) expired code rejected; (7) refresh token rotation works after access token expiry. Paste output for each.
+**Verification:** Screenshot the home page highlights row at 375 / 768 / 1440, confirming centered alignment matching the categories row's centering pattern.
 
 ---
 
-## TASK 14 — Blog read analytics
+## TASK 24 — Viewing-now count on every product surface
 
-- Track per-post: currently reading (active in last 5 min), total accumulated reads, unique readers, average read time, and scroll-depth completion rate (fired at 25/50/75/100%).
-- A read counts once per session per post — do not double-count refreshes within the same session.
-- Storefront: "N reading now" pill on the post (same visual treatment as the PDP viewer count) and a total read count on blog cards and the post header.
-- Admin: blog analytics table — post, total reads, unique readers, currently reading, avg read time, completion rate — sortable, with a date-range filter.
+Task 7 only added the viewer pill on the PDP. Extend it:
 
-**Verification:** Open a post in two sessions, show "2 reading now", close one and confirm it drops after the timeout. Show the admin table with accurate totals. Confirm a refresh does not increment the total.
+- Show the same "N viewing now" pill (same style, top-right, theme background pill, hide below threshold) on **every product card wherever it appears** — home page grids, category/listing pages, search results, highlights (if applicable), related products — not just the PDP.
+- Reuse the same backend/data source and Redis-cached counts from Task 7/10 rather than building a second system. Batch-fetch counts for all products on a listing page in one request rather than one call per card.
 
----
-
-## TASK 15 — Admin: Activity feed
-
-New admin sidebar item, "Activity". This is the privileged view of the same `activity_events` data the public ticker uses — here it shows full detail.
-
-- Reverse-chronological feed with infinite scroll or pagination. Each row shows:
-  - Event type icon + coloured pill (purchase / wishlist / cart / newsletter).
-  - Full customer name, and email (or "Guest" for anonymous sessions), linked to the customer detail page where one exists.
-  - Product thumbnail, full product name **hyperlinked to the product page**, and the price at the time of the event.
-  - For purchases: order number linked to the order detail, and order total.
-  - Exact timestamp on hover, relative time in the row.
-- Filters: event type (multi-select), date range, and a customer/product search box.
-- Summary strip at the top: counts per event type for the selected range.
-- CSV export of the filtered view.
-- Query must be indexed on `(type, created_at)` and `(user_id, created_at)`; paginate server-side, never load the whole table.
-
-**Verification:** Trigger one real event of each type, then show the feed with all four visible, each with the correct customer, product link, and price. Click through a product link and an order link to confirm they resolve. Apply a type filter and a date filter and show the counts updating. Export CSV and paste the first three rows.
+**Verification:** Show a product with an active view count rendering correctly on: a listing/category page, the search results page, and the home page grid, all pulling from the same live count as the PDP. Confirm a single batched network call serves an entire grid, not N individual calls.
 
 ---
 
-## TASK 16 — Admin: Newsletter subscribers
+## TASK 25 — Hero image fit / admin crop tool
 
-New admin sidebar item, "Newsletter".
+Beyond the focal-point fix in Task 4, the underlying problem is the hero section itself is too tall and the image doesn't fill it, leaving dark bars.
 
-- Table of everyone who requested the newsletter: email, name (if they have an account, otherwise blank), signup date, source (footer / modal / checkout — record this going forward), subscription status (subscribed / unsubscribed), and whether they are also a registered customer.
-- Search by email, filter by status / date range / registered-vs-guest.
-- Stat cards at the top: total subscribers, new this week, new this month, unsubscribe rate.
-- **CSV export** of the filtered list (email, name, signup date, source) for use in an external mailing tool.
-- "Copy all emails" button that copies the filtered set as a comma-separated list.
-- Unsubscribe handling: an unsubscribe token + `/unsubscribe` page, and a status toggle in admin. Unsubscribed addresses must be excluded from both the export and the copy action by default — make that exclusion explicit in the UI.
-- This page is admin-authenticated only. No public endpoint may ever list subscriber emails.
+- In the admin hero editor, add an actual **crop/reframe tool** (e.g. a drag-to-adjust crop box over the uploaded image, or min/max scale + reposition controls) so the admin can define exactly what region of the image fills the hero container — not just a focal point, but a true crop.
+- Store the crop rectangle (or equivalent transform) per slide and per breakpoint if needed (desktop crop can differ from mobile crop).
+- The hero container's height should be tuned down from its current overly tall value — pick a more standard hero aspect ratio and confirm the cropped image fills it edge-to-edge with no letterboxing/dark bars, without stretching/distorting the image.
 
-**Verification:** Sign up two addresses from the footer, show both in the table. Unsubscribe one via the token link and confirm the status flips and it drops out of the export. Paste the exported CSV header + rows. Confirm the endpoint 401s without an admin session.
+**Verification:** Upload a test image, use the new crop tool to reframe it, and screenshot the hero at 375 / 768 / 1440 / 1920 showing full-bleed fill with no dark edges and no distortion. Show the admin crop UI itself.
 
 ---
 
-## TASK 17 — Demo mode with animated mascot
+## TASK 26 — Fix: admin customers "last seen" always shows "never"
 
-Add an environment-driven demo mode for showing this build to prospective clients.
+This is a bug against the Task 11 implementation — accounts that are actively logged in right now show "never."
 
-**Config:**
-- `.env` flag: `APP_MODE=demo|production` (also expose as `NEXT_PUBLIC_APP_MODE` for the client). Default to `production` if unset or invalid — a missing flag must never accidentally enable demo mode.
-- Demo contact details also come from env so they're easy to change: `DEMO_CONTACT_EMAIL=arnoldchrisoduor@gmail.com`, `DEMO_CONTACT_PHONE=+254791165995`.
-- When `APP_MODE=production`, none of this code path runs and nothing ships to the client bundle — gate it at the component level so it tree-shakes out.
+- Debug the actual data path: confirm the heartbeat/session `last_seen` update is firing, being persisted, and being read correctly by the customers list query (check for a join/field-name mismatch, a query reading the wrong table, or a heartbeat that's silently failing).
+- Fix it so `last_seen` reflects real activity, updating live for active sessions.
 
-**Behaviour (demo mode only):**
-1. **First visit only**, show a single welcome modal: "This is a demo store", short line explaining it's a demonstration build, and two clear actions — "Email the developer" (mailto with a prefilled subject) and "Call +254791165995" (tel: link on mobile, copy-to-clipboard on desktop). One dismiss button.
-2. On dismiss, the modal **animates into a small mascot** that docks to the edge of the viewport (same pinned treatment as the stylist FAB) and stays there across pages. Persist dismissal in localStorage so the modal never shows again for that visitor.
-3. The mascot idles with a subtle loop (blink, gentle bob, or breathing). On hover it reacts.
-4. **Occasionally** — roughly every 90–120s, and only while the tab is visible — a speech-bubble toast emerges from the mascot with a short rotating line, e.g. "Like what you see?", "Want a store like this?", "I can be yours — tap to chat", "Built by Digital Wilderness — say hi?". The toast auto-dismisses after ~6s. Rotate through the lines without repeating consecutively.
-5. Clicking the mascot or a toast opens a compact contact card with the email and phone, plus a one-line "What can I build for you?" link. Not a full modal takeover.
-6. The mascot can be collapsed to a small tab by the user; collapsed state persists.
-7. Respect `prefers-reduced-motion`: static mascot, toasts still appear but without motion.
-8. It must never cover the back-to-top button, the stylist FAB, cart controls, or any primary CTA at any breakpoint — use the shared stacking order defined in Task 9.
-
-**Verification:** Set `APP_MODE=demo`, hard-reload with cleared storage, and show: the welcome modal on first load only, the animate-to-mascot transition, the mascot persisting across a page navigation, at least one toast appearing, the contact card contents, and the collapse state persisting after reload. Then set `APP_MODE=production`, rebuild, and prove nothing demo-related renders **and** that no demo strings (the email, the phone, the toast copy) appear anywhere in the production JS bundle — grep the build output and paste the result. Also verify with the flag entirely absent from `.env`.
+**Verification:** Log in as a test customer, browse for a minute, and show their row in admin customers updating from "never" to an accurate relative "last seen" (e.g. "just now" / "2 minutes ago"). Confirm it continues to update on subsequent activity.
 
 ---
 
-## Final pass (only after all 17 report PASS)
+## TASK 27 — Fix: admin wishlists/newsletter missing data (email not showing)
 
-1. Run the full test suite and `go vet` / lint; paste output.
-2. Build the Next.js app for production; paste output and confirm zero type errors.
-3. Check every new endpoint for authorization — no analytics, activity, newsletter or admin route may be reachable unauthenticated.
-4. Confirm the **public** activity endpoint leaks no surname, email, price, or ID, while the **admin** activity feed shows all of it.
-5. Confirm no subscriber email is reachable outside an admin session.
-6. Run Lighthouse on the homepage and a PDP; report performance and accessibility scores. Flag any regression caused by the new tracking scripts or the mascot.
-7. List every migration added, in order, with the rollback command for each.
+- Debug why newsletter subscriber emails aren't appearing in the Task 16 admin newsletter table (or wherever "wishlists" data is also missing — clarify if this is one bug or two separate ones once you inspect it, and report which).
+- Likely causes to check: the signup handler not actually persisting the email, a serialization bug hiding the field in the API response, or a frontend mapping bug reading the wrong key.
+
+**Verification:** Sign up a fresh newsletter subscriber from the footer, show the email actually appearing in the admin table immediately after. Do the same check for whatever the wishlist data gap turns out to be, and show it resolved.
+
+---
+
+## TASK 28 — Footer: developer contact details
+
+- Add the developer's contact details to the footer (`arnoldchrisoduor@gmail.com`, `+254791165995`) — a small, tasteful line, not competing visually with the store's own contact info. State clearly where you placed it (e.g. bottom credit line) so it can be reviewed.
+
+**Verification:** Screenshot the footer showing both the store's contact info and the developer credit line, clearly distinguishable from each other.
+
+---
+
+## TASK 29 — Fix: footer extra bottom whitespace
+
+- The home page currently has extra padding/margin below the footer, making the page scrollable roughly a further third past the footer into blank space.
+- Find and remove the stray margin/padding (likely a leftover container height, a body/html min-height rule, or an empty wrapper below the footer) rather than papering over it with `overflow: hidden`.
+
+**Verification:** Screenshot the home page scrolled fully to the bottom, showing the footer as the true end of the page with no trailing white space. Confirm on both desktop and mobile.
+
+---
+
+## TASK 30 — Admin products: editable categories
+
+- Categories are currently fixed/hardcoded. Add full CRUD: create, rename, delete (with a guard/warning if products are still assigned to a category being deleted — either block deletion or offer reassignment), and reorder if categories have a display order.
+- Product edit form's category field becomes a proper select/multi-select sourced from this new table, not a hardcoded list.
+
+**Verification:** Create a new category, assign it to a product, rename it and confirm the change reflects on the storefront, then attempt to delete a category still in use and show the guard behavior. Delete an unused category successfully.
+
+---
+
+## TASK 31 — Blog: reading-now count on home page cards
+
+- Extend Task 14's "N reading now" pill to also show on blog post cards on the home page (wherever posts are listed as cards), top-right of the card thumbnail — same visual treatment as the PDP/product viewer pill.
+- Reuse the same live count backend, batch-fetched for all visible cards in one call.
+
+**Verification:** Open a post in another session to generate a live count, then show it reflected on that post's card on the home page, confirmed via a single batched request.
+
+---
+
+## TASK 32 — Announcement bar: multiple messages with rotation
+
+- Extend the announcement bar to accept a **list** of announcements (admin CRUD: add/edit/delete/reorder), instead of a single message.
+- Rotate through them automatically with a **configurable interval** (admin-settable, e.g. in seconds), looping continuously. Smooth transition between messages (fade or slide), pause on hover if there's a dismiss/close affordance.
+- If only one announcement exists, behave exactly as before (no rotation needed/visible).
+
+**Verification:** Add 3 announcements with a short interval (e.g. 4s) for testing, show them rotating on the storefront in order and looping back to the first. Change the interval in admin and confirm the rotation speed updates. Reduce to 1 announcement and confirm it displays statically.
+
+---
+
+## TASK 33 — Idle-triggered promotional banner (home page only)
+
+- New admin-configurable promotional banner, home page only: image, text, and an optional button (admin can leave it off entirely) with a configurable destination URL and label.
+- Triggers after the user has been **idle** on the home page for a configurable duration (default ~20s — admin-settable), using real idle detection (no mouse/scroll/keyboard/touch activity), not just a fixed page-load timer.
+- Design it like a promotional takeover module (e.g. a centered modal or slide-in panel with the image, text, and button if configured) — styled to theme, dismissible, and should not re-trigger repeatedly once dismissed in the same session.
+- Only fires once per session even if the user goes idle again after dismissing.
+
+**Verification:** Set idle threshold to 5s for testing. Load the home page, do nothing, and show the banner appearing after 5s idle. Move the mouse before the threshold and confirm it does NOT fire prematurely. Dismiss it, go idle again, and confirm it does not reappear in the same session. Show the admin config for image/text/button/URL and confirm an admin can leave the button off entirely and it doesn't render.
+
+---
+
+## TASK 34 — Admin discounts: disable, delete, update
+
+- Discounts currently can only be created. Add: edit existing discount (value, dates, conditions), a disable/enable toggle (soft-off without deleting, so it can be re-enabled later), and hard delete (with a guard if the discount has been used in existing orders — block delete or convert to disabled-only in that case, your call, state which).
+
+**Verification:** Create a test discount, disable it and confirm it stops applying at checkout, re-enable and confirm it applies again, edit its value and confirm the new value takes effect, then delete an unused one and confirm it's gone. Attempt to delete a discount that's been used in an order and show the guard behavior.
+
+---
+
+## TASK 35 — Admin default password + 2FA-gated password change
+
+- Set a default admin password into the system at first deploy (via env var or a seeded value — do not hardcode a password directly in source; use something like `ADMIN_DEFAULT_PASSWORD` in `.env` read once at first-run seed). Document this clearly in a README/setup note so it isn't lost.
+- Add an admin "update password" section in admin settings. Changing the password **requires 2FA verification** (a code sent to the admin's email) regardless of whether 2FA is otherwise optional for regular customers — this is a hard requirement for admin password changes specifically.
+
+**Verification:** Confirm a fresh deploy seeds the default password from env. Log in with it, go to update password, confirm the flow requires and validates a 2FA code before the change is accepted, and confirm the old password no longer works afterward while the new one does.
+
+---
+
+## TASK 36 — Admin products: delete, image updates, per-variant images, fix variant horizontal scroll
+
+- Add product deletion (with a guard/warning if the product has existing orders — soft-delete/archive in that case rather than hard delete, state which approach you took).
+- Add the ability to update/replace a product's images from the edit form (add, remove, reorder), not just at creation.
+- **Per-variant images:** each variant (e.g. color/size combination) can have its own attached photo. On the storefront PDP, switching the selected variant swaps the displayed main image to that variant's photo if one exists; if no variant-specific image exists, fall back to the product's default (first) image, and clearly indicate if that variant is out of stock/unavailable (e.g. a badge or disabled state on the swatch).
+- **Fix:** the variant selector section is currently causing horizontal overflow/scroll on the page. Fix the layout (wrap, scroll-within-container instead of page-level scroll, or a more compact swatch layout) so it no longer breaks page width at any breakpoint.
+
+**Verification:** Delete a product with no orders (confirm hard removal) and one with orders (confirm archive/soft-delete behavior instead). Add/remove/reorder images on an existing product and confirm it reflects on the storefront. Attach a variant-specific image, switch to that variant on the PDP, and confirm the main image swaps; switch to a variant with no image and confirm it falls back to default with correct stock indication. Screenshot the variant selector at 375px confirming no page-level horizontal scroll.
+
+---
+
+## TASK 37 — Admin sidebar: menu heading emphasis + Activity unread badge
+
+- Admin sidebar section headings (group labels above nav items) should visually "pop" more — stronger weight/size/letter-spacing/color treatment consistent with the theme, so they're clearly distinguishable from the nav items beneath them.
+- On the "Activity" nav item (from Task 15), add an unread-count badge:
+  - Shows the number of activity events not yet viewed, in a **neutral-background** badge while it's just an unread count.
+  - When there's something that qualifies as a true notification (define/confirm this distinction against how Task 15 categorizes events, if it does — otherwise treat all unread activity as notifications), show the count in a **red-background** badge instead.
+  - Opening the Activity page marks everything as read and the badge count resets to 0 immediately (optimistic UI is fine, but confirm it's also persisted server-side so a refresh doesn't bring the count back).
+
+**Verification:** Screenshot the sidebar showing the heading treatment clearly distinct from nav items. Trigger 3 new activity events without opening the Activity page, show the badge at "3." Open the Activity page and confirm the badge immediately clears to 0, then refresh the page and confirm it stays at 0 (not reappearing due to a client-only reset).
+
+---
+
+## TASK 38 — Admin: AI usage monitoring & per-user access control
+
+Depends on Task 18 (OpenRouter stylist integration) and, if built, Task 21 (AI try-on) being in place first.
+
+### Usage tracking
+
+- On every OpenRouter call (stylist + try-on), log to a new `ai_usage_log` table: `id`, `user_id` (nullable for guest), `feature` (stylist/tryon), `model`, `prompt_tokens`, `completion_tokens`, `estimated_cost`, `created_at`. Pull token counts from the response's own `usage` field — don't estimate them separately.
+- Add a background job (or an on-demand admin action) that calls `GET /api/v1/key` using the configured `OPENROUTER_API_KEY` to fetch `limit` and `limit_remaining` for that key, and `GET /api/v1/credits` (requires a separate `OPENROUTER_MANAGEMENT_KEY` in `.env` — note this is a different key type than the regular API key, generated separately in the OpenRouter dashboard) for account-wide `total_credits`/`total_usage`. Cache these in Redis with a short TTL (e.g. 5 min) — don't hit OpenRouter on every admin page load.
+
+### Admin UI — new "AI Usage" section
+
+- Top summary cards: remaining key credit limit, account-wide credits remaining, total spend this month (sum from `ai_usage_log`), and today's spend.
+- Usage-over-time chart (daily spend, last 30 days) sourced from `ai_usage_log`.
+- Breakdown table: usage by feature (stylist vs try-on) and by model.
+- Per-user table: user, feature, request count, total tokens, estimated cost — sortable, date-range filterable. Guest usage grouped by session.
+- Low-balance warning banner in admin (and optionally an email alert) when `limit_remaining` or account credits drop below a configurable threshold (`AI_LOW_BALANCE_THRESHOLD` in `.env`).
+
+### Per-user AI access control
+
+- Add a `ai_access_enabled` boolean (default true) to the user record. Admin can toggle it off for a specific user from their customer detail page or the AI Usage table.
+- When disabled, that user's stylist/try-on requests must be blocked **before** any OpenRouter call is made — the toggle must not merely hide the UI, it has to be enforced server-side on the request handler.
+- Default message shown to a blocked user: **"AI features are currently unavailable for your account. Contact support if you believe this is a mistake."** — themed, not a raw error, no mention of billing/abuse internally.
+- Also support a **global kill switch** (`AI_FEATURES_GLOBALLY_ENABLED` in `.env`, or an admin-toggleable global setting stored in DB) that disables AI features for everyone at once — useful if the account runs out of credits entirely. Same themed message applies store-wide when this is off.
+
+**Verification:**
+1. Show the admin AI Usage page with real cards populated from a live `GET /api/v1/key` call — paste the raw response alongside the rendered card to confirm they match.
+2. Make a few real stylist requests as different test users, then show the per-user table reflecting accurate token counts and costs for each.
+3. Disable AI access for one test user, confirm their next stylist request is blocked server-side with the themed message (not just hidden in the UI — try hitting the endpoint directly to confirm it's enforced there too).
+4. Re-enable them and confirm access is restored.
+5. Flip the global kill switch off and confirm all users (including admins, unless you decide otherwise — state your choice) get the themed message store-wide, then flip it back on.
+6. Temporarily lower `AI_LOW_BALANCE_THRESHOLD` above current remaining credits and confirm the low-balance warning banner appears in admin.
+
+### Global kill switch — admin bypass
+
+- The global kill switch (`AI_FEATURES_GLOBALLY_ENABLED` / DB-stored global setting) must **never block admin users**. When it's off, customers get the themed "AI features are currently unavailable" message, but any user with an admin role can continue using the stylist and try-on normally — so admins can keep testing/verifying while the switch is off for everyone else.
+- Enforce this the same way as the per-user toggle: check the requester's role server-side before applying the global block, not just in the UI.
+- The per-user `ai_access_enabled` toggle, by contrast, **does** apply to admins if explicitly set on an admin account — that's a distinct, deliberate per-user control, not the global switch. State this distinction clearly in the code comments so it isn't "fixed" into applying to admins by mistake later.
+
+**Verification (replace step 5 above):**
+5. Flip the global kill switch off. As a regular customer, confirm the themed block message appears (test at the endpoint level, not just the UI). As an admin, confirm the stylist/try-on still work normally during the same window. Flip the switch back on and confirm customer access is restored.
+
+
+## Search box fix 
+
+Search box at the navigation bar enlarges to too big proportiona causing horizontal scroll in mobile devices, check this bug and solve it
+
+## Final pass (only after all 20 tasks in this round report PASS)
+
+1. Run full test suite + lint; paste output.
+2. Production build; confirm zero type errors and that demo-mode code (mascot, contact popup) is absent from the bundle.
+3. Re-run the Task 13/17 auth and demo-mode checks briefly to confirm nothing in this round regressed them (variant image changes, product deletion, and category CRUD all touch the product model auth-gated routes may depend on).
+4. Confirm no uploaded try-on photos persist anywhere after their request completes (re-check Task 21's storage claim).
+5. List every new migration in order with rollback commands.
+
+
+# Autonomy instruction — stop asking for "go"
+
+Do not pause between tasks waiting for me to say "go," "continue," "next," or any other confirmation. 
+
+Rules:
+- After a task reports PASS, immediately begin the next task in the same response — no summary-then-wait, no "Ready for Task N? Let me know." Just continue.
+- Only stop and wait for me if a task is genuinely BLOCKED (ambiguous requirement, missing credential, a conflict with existing code you can't safely resolve) — and even then, say exactly what's blocking it and what you need, not just "let me know when ready."
+- Work through the entire remaining task list in this session, one after another, until either everything is PASS or you hit a real blocker.
+- If you're unsure whether something needs my input, default to making the most reasonable assumption, state it in the task report, and keep going — don't treat "I'm not 100% sure" as a reason to stop.
+- This applies for the rest of this task list. Resume now with the next unfinished task and keep going without further check-ins.

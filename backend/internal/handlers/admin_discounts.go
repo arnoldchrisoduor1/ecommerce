@@ -151,6 +151,34 @@ func (h *Handler) AdminUpdateDiscount(c *fiber.Ctx) error {
 
 func (h *Handler) AdminDeleteDiscount(c *fiber.Ctx) error {
 	id := c.Params("id")
+	var code string
+	err := h.db.QueryRow(c.Context(), `SELECT code FROM discounts WHERE id = $1`, id).Scan(&code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return notFound(c, "discount not found")
+	}
+	if err != nil {
+		return internalError(c, "AdminDeleteDiscount lookup", err)
+	}
+
+	var orderUses, claimUses int64
+	if err := h.db.QueryRow(c.Context(), `
+		SELECT COUNT(*)::bigint FROM orders WHERE discount_code = $1`, code,
+	).Scan(&orderUses); err != nil {
+		return internalError(c, "AdminDeleteDiscount order count", err)
+	}
+	if err := h.db.QueryRow(c.Context(), `
+		SELECT COUNT(*)::bigint FROM discount_claims WHERE discount_id = $1`, id,
+	).Scan(&claimUses); err != nil {
+		return internalError(c, "AdminDeleteDiscount claim count", err)
+	}
+	if orderUses > 0 || claimUses > 0 {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"error":       "discount has been used — disable it instead of deleting",
+			"order_uses":  orderUses,
+			"claim_uses":  claimUses,
+		})
+	}
+
 	tag, err := h.db.Exec(c.Context(), `DELETE FROM discounts WHERE id = $1`, id)
 	if err != nil {
 		return internalError(c, "AdminDeleteDiscount delete", err)

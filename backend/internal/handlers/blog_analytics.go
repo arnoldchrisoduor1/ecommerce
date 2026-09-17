@@ -177,6 +177,77 @@ func (h *Handler) BlogReadScroll(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
+type blogPresenceBatchRequest struct {
+	PostIDs []string `json:"post_ids"`
+}
+
+// BlogPresenceBatchCount returns live reading counts for many posts in one call.
+func (h *Handler) BlogPresenceBatchCount(c *fiber.Ctx) error {
+	var req blogPresenceBatchRequest
+	if err := c.BodyParser(&req); err != nil {
+		return badRequest(c, "invalid request body")
+	}
+	if len(req.PostIDs) == 0 {
+		return c.JSON(fiber.Map{"counts": fiber.Map{}})
+	}
+	if len(req.PostIDs) > 50 {
+		return badRequest(c, "too many post ids (max 50)")
+	}
+
+	counts := make(map[string]int64, len(req.PostIDs))
+	if h.rdb == nil {
+		rows, err := h.db.Query(c.Context(), `
+			SELECT post_id::text, COUNT(*)::bigint
+			FROM blog_reads
+			WHERE post_id = ANY($1::uuid[])
+			  AND last_seen >= now() - interval '5 minutes'
+			GROUP BY post_id`, req.PostIDs)
+		if err != nil {
+			return internalError(c, "BlogPresenceBatchCount db", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			var n int64
+			if err := rows.Scan(&id, &n); err != nil {
+				return internalError(c, "BlogPresenceBatchCount scan", err)
+			}
+			counts[id] = n
+		}
+		return c.JSON(fiber.Map{"counts": counts})
+	}
+
+	cutoff := strconv.FormatFloat(float64(time.Now().Add(-blogPresenceTTL).UnixMilli()), 'f', 0, 64)
+	ctx := c.Context()
+	pipe := h.rdb.Pipeline()
+	type cmdPair struct {
+		id    string
+		zcard *redis.IntCmd
+	}
+	pairs := make([]cmdPair, 0, len(req.PostIDs))
+	for _, id := range req.PostIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		key := blogPresenceKey(id)
+		pipe.ZRemRangeByScore(ctx, key, "-inf", cutoff)
+		zcard := pipe.ZCard(ctx, key)
+		pairs = append(pairs, cmdPair{id: id, zcard: zcard})
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return internalError(c, "BlogPresenceBatchCount pipeline", err)
+	}
+	for _, p := range pairs {
+		n, err := p.zcard.Result()
+		if err != nil {
+			return internalError(c, "BlogPresenceBatchCount zcard", err)
+		}
+		counts[p.id] = n
+	}
+	return c.JSON(fiber.Map{"counts": counts})
+}
+
 // BlogPresenceCount returns readers active in last 5 minutes.
 func (h *Handler) BlogPresenceCount(c *fiber.Ctx) error {
 	postID := c.Params("id")

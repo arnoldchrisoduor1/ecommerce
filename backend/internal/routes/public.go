@@ -45,14 +45,16 @@ func RegisterPublicRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, s
 
 	// --- Live viewer / presence tracking (Redis-backed) ---
 	presence := api.Group("/presence")
+	presence.Post("/products/batch", h.PresenceBatchCount)
 	presence.Post("/products/:id/heartbeat", h.PresenceHeartbeat) // client pings every ~15s
 	presence.Get("/products/:id", h.PresenceCount)
 
 	// --- Analytics page views (Tasks 10/11/14) ---
-	analytics := api.Group("/analytics")
+	analytics := api.Group("/analytics", h.OptionalUserAuth)
 	analytics.Post("/views", h.AnalyticsStartPageView)
 	analytics.Post("/views/:id/heartbeat", h.AnalyticsHeartbeatPageView)
 	analytics.Post("/views/:id/close", h.AnalyticsClosePageView)
+	analytics.Post("/blog/presence/batch", h.BlogPresenceBatchCount)
 	analytics.Post("/blog/:id/read", h.BlogReadStart)
 	analytics.Post("/blog/:id/read/heartbeat", h.BlogReadHeartbeat)
 	analytics.Post("/blog/:id/read/scroll", h.BlogReadScroll)
@@ -110,8 +112,13 @@ func RegisterPublicRoutes(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, s
 	// --- Section 5: AI stylist chat ---
 	stylist := api.Group("/stylist")
 	stylist.Get("/status", h.StylistStatus)
-	stylist.Post("/chat", h.StylistChat)          // streams via Claude API, product-catalog-aware
+	stylist.Post("/chat", h.OptionalUserAuth, h.StylistChat) // streams via OpenRouter, catalog-aware RAG-lite context
 	stylist.Post("/style-quiz", h.SubmitStyleQuiz) // returns personalized picks
+
+	// --- AI virtual try-on (auth + verified 2FA required on POST) ---
+	tryon := api.Group("/tryon")
+	tryon.Get("/status", h.TryOnStatus)
+	tryon.Post("/", h.RequireUserAuth, h.TryOnGenerate)
 
 	// --- Section 9: Content / blog ---
 	content := api.Group("/content")

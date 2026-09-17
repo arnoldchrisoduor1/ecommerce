@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import { ProductCard } from '@/components/product/ProductCard';
+import { ProductPresenceProvider } from '@/components/product/ProductPresenceProvider';
 import {
   SORT_API,
   apiGet,
@@ -128,11 +129,13 @@ export function ShopClient({
         </div>
       </header>
 
-      <div className="shelf__grid" data-testid="shop-grid">
-        {ordered.map((p) => (
-          <ProductCard key={p.id} product={p} showQuickView showViewer />
-        ))}
-      </div>
+      <ProductPresenceProvider productIds={ordered.map((p) => p.id)}>
+        <div className="shelf__grid" data-testid="shop-grid">
+          {ordered.map((p) => (
+            <ProductCard key={p.id} product={p} showQuickView />
+          ))}
+        </div>
+      </ProductPresenceProvider>
 
       {totalPages > 1 ? (
         <nav className="shop__pagination" aria-label="Pagination">

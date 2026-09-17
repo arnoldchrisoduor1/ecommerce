@@ -133,7 +133,7 @@
   --z-float: 40;
   --z-float-back-top: 40; /* back-to-top (bottom-right) */
   --z-float-stylist: 41; /* AI stylist FAB (bottom-left) */
-  --z-float-mascot: 42; /* demo mascot (Task 17) — above back-to-top */
+  --z-float-mascot: 42; /* demo contact dock (Task 20) — middle-right, above back-to-top stack */
   --float-back-top-size: 2.75rem; /* 44px hit target */
   --float-edge: var(--space-6);
   --presence-high-demand: 3; /* viewer count threshold for high-demand tag */

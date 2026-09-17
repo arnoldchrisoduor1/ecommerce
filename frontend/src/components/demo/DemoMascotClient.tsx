@@ -3,81 +3,95 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './demo.css';
 
-const LS_DISMISSED = 'studio-demo-welcome-dismissed';
-const LS_COLLAPSED = 'studio-demo-mascot-collapsed';
-
-const TOAST_LINES = [
-  'Like what you see?',
-  'Want a store like this?',
-  'I can be yours — tap to chat',
-  'Built by Digital Wilderness — say hi?',
-] as const;
+const SESSION_INTRO_KEY = 'studio_demo_contact_intro_seen';
+/** Auto-dock reveal after this delay unless user dismisses first. */
+const AUTO_DOCK_MS = 5000;
+/** Periodic contact re-expand interval (2.5 min). */
+const PERIODIC_EXPAND_MS = 150_000;
+/** How long periodic expansion stays open. */
+const PERIODIC_EXPAND_HOLD_MS = 8000;
 
 const EMAIL =
   process.env.NEXT_PUBLIC_DEMO_CONTACT_EMAIL || 'arnoldchrisoduor@gmail.com';
 const PHONE =
   process.env.NEXT_PUBLIC_DEMO_CONTACT_PHONE || '+254791165995';
 
-type Phase = 'boot' | 'welcome' | 'morph' | 'docked';
+type Phase = 'boot' | 'reveal' | 'morph' | 'docked';
 
-function randomToastDelayMs() {
-  return 90_000 + Math.floor(Math.random() * 30_000);
-}
-
-function pickToast(prev: string | null): string {
-  let next = TOAST_LINES[Math.floor(Math.random() * TOAST_LINES.length)]!;
-  let guard = 0;
-  while (next === prev && guard < 8) {
-    next = TOAST_LINES[Math.floor(Math.random() * TOAST_LINES.length)]!;
-    guard += 1;
-  }
-  return next;
-}
-
-function MascotFace({ amused }: { amused?: boolean }) {
+function ContactIcon() {
   return (
-    <svg className="demo-mascot__face" viewBox="0 0 64 64" aria-hidden="true">
-      <circle cx="32" cy="32" r="28" className="demo-mascot__body" />
-      <ellipse
-        cx="22"
-        cy="28"
-        rx="3.2"
-        ry={amused ? 1.2 : 3.5}
-        className="demo-mascot__eye demo-mascot__eye--l"
-      />
-      <ellipse
-        cx="42"
-        cy="28"
-        rx="3.2"
-        ry={amused ? 1.2 : 3.5}
-        className="demo-mascot__eye demo-mascot__eye--r"
-      />
-      <path
-        className="demo-mascot__mouth"
-        d={amused ? 'M22 40 Q32 48 42 40' : 'M24 40 Q32 44 40 40'}
-        fill="none"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-      />
-      <circle cx="14" cy="36" r="3" className="demo-mascot__cheek" />
-      <circle cx="50" cy="36" r="3" className="demo-mascot__cheek" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+      <path d="M4 6h16v12H4z" strokeLinejoin="round" />
+      <path d="m4 7 8 6 8-6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function ContactDetails({
+  onPhoneAction,
+  phoneCopied,
+  coarsePointer,
+}: {
+  onPhoneAction: () => void;
+  phoneCopied: boolean;
+  coarsePointer: boolean;
+}) {
+  const mailto = `mailto:${EMAIL}?subject=${encodeURIComponent('Demo store inquiry')}`;
+  return (
+    <>
+      <p className="ds-label demo-contact__eyebrow">Developer contact</p>
+      <a className="demo-contact__email" href={mailto} data-testid="demo-contact-email">
+        {EMAIL}
+      </a>
+      <button
+        type="button"
+        className="demo-contact__phone"
+        data-testid="demo-contact-phone"
+        onClick={onPhoneAction}
+      >
+        {phoneCopied && !coarsePointer ? 'Phone copied' : PHONE}
+      </button>
+    </>
   );
 }
 
 export function DemoMascot() {
   const [phase, setPhase] = useState<Phase>('boot');
-  const [collapsed, setCollapsed] = useState(false);
-  const [cardOpen, setCardOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [hovered, setHovered] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [coarsePointer, setCoarsePointer] = useState(false);
 
-  const lastToastRef = useRef<string | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
-  const dismissToastRef = useRef<number | null>(null);
+  const autoDockRef = useRef<number | null>(null);
+  const periodicRef = useRef<number | null>(null);
+  const collapseRef = useRef<number | null>(null);
+
+  const clearTimers = useCallback(() => {
+    if (autoDockRef.current != null) window.clearTimeout(autoDockRef.current);
+    if (periodicRef.current != null) window.clearTimeout(periodicRef.current);
+    if (collapseRef.current != null) window.clearTimeout(collapseRef.current);
+    autoDockRef.current = null;
+    periodicRef.current = null;
+    collapseRef.current = null;
+  }, []);
+
+  const dock = useCallback(() => {
+    if (autoDockRef.current != null) {
+      window.clearTimeout(autoDockRef.current);
+      autoDockRef.current = null;
+    }
+    try {
+      sessionStorage.setItem(SESSION_INTRO_KEY, '1');
+    } catch {
+      /* private mode */
+    }
+    if (reduceMotion) {
+      setPhase('docked');
+      return;
+    }
+    setPhase('morph');
+    window.setTimeout(() => setPhase('docked'), 480);
+  }, [reduceMotion]);
 
   useEffect(() => {
     const motionMq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -88,6 +102,15 @@ export function DemoMascot() {
     syncPointer();
     motionMq.addEventListener('change', syncMotion);
     pointerMq.addEventListener('change', syncPointer);
+
+    let seenIntro = false;
+    try {
+      seenIntro = sessionStorage.getItem(SESSION_INTRO_KEY) === '1';
+    } catch {
+      /* ignore */
+    }
+    setPhase(seenIntro ? 'docked' : 'reveal');
+
     return () => {
       motionMq.removeEventListener('change', syncMotion);
       pointerMq.removeEventListener('change', syncPointer);
@@ -95,64 +118,42 @@ export function DemoMascot() {
   }, []);
 
   useEffect(() => {
-    let dismissed = false;
-    let wasCollapsed = false;
-    try {
-      dismissed = localStorage.getItem(LS_DISMISSED) === '1';
-      wasCollapsed = localStorage.getItem(LS_COLLAPSED) === '1';
-    } catch {
-      /* private mode */
-    }
-    setCollapsed(wasCollapsed);
-    setPhase(dismissed ? 'docked' : 'welcome');
-  }, []);
+    if (phase !== 'reveal') return;
+    autoDockRef.current = window.setTimeout(() => dock(), AUTO_DOCK_MS);
+    return () => {
+      if (autoDockRef.current != null) window.clearTimeout(autoDockRef.current);
+    };
+  }, [phase, dock]);
 
-  const persistDismissed = useCallback(() => {
-    try {
-      localStorage.setItem(LS_DISMISSED, '1');
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const persistCollapsed = useCallback((value: boolean) => {
-    try {
-      localStorage.setItem(LS_COLLAPSED, value ? '1' : '0');
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const dismissWelcome = useCallback(() => {
-    persistDismissed();
-    if (reduceMotion) {
-      setPhase('docked');
-      return;
-    }
-    setPhase('morph');
-    window.setTimeout(() => setPhase('docked'), 520);
-  }, [persistDismissed, reduceMotion]);
-
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      persistCollapsed(next);
-      if (next) {
-        setCardOpen(false);
-        setToast(null);
+  const schedulePeriodic = useCallback(() => {
+    if (periodicRef.current != null) window.clearTimeout(periodicRef.current);
+    periodicRef.current = window.setTimeout(() => {
+      if (document.visibilityState !== 'visible') {
+        schedulePeriodic();
+        return;
       }
-      return next;
-    });
-  }, [persistCollapsed]);
+      setExpanded(true);
+      if (collapseRef.current != null) window.clearTimeout(collapseRef.current);
+      collapseRef.current = window.setTimeout(() => {
+        setExpanded(false);
+        schedulePeriodic();
+      }, PERIODIC_EXPAND_HOLD_MS);
+    }, PERIODIC_EXPAND_MS);
+  }, []);
 
-  const openCard = useCallback(() => {
-    setToast(null);
-    setCardOpen(true);
-    if (collapsed) {
-      setCollapsed(false);
-      persistCollapsed(false);
-    }
-  }, [collapsed, persistCollapsed]);
+  useEffect(() => {
+    if (phase !== 'docked') return;
+    schedulePeriodic();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') schedulePeriodic();
+      else clearTimers();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearTimers();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [phase, schedulePeriodic, clearTimers]);
 
   const copyPhone = useCallback(async () => {
     try {
@@ -172,180 +173,97 @@ export function DemoMascot() {
     void copyPhone();
   }, [coarsePointer, copyPhone]);
 
-  // Periodic speech toasts while tab visible and mascot docked (not collapsed).
-  useEffect(() => {
-    if (phase !== 'docked' || collapsed) return;
-
-    const clearTimers = () => {
-      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
-      if (dismissToastRef.current != null) window.clearTimeout(dismissToastRef.current);
-      toastTimerRef.current = null;
-      dismissToastRef.current = null;
-    };
-
-    const schedule = () => {
-      clearTimers();
-      toastTimerRef.current = window.setTimeout(() => {
-        if (document.visibilityState !== 'visible') {
-          schedule();
-          return;
-        }
-        const line = pickToast(lastToastRef.current);
-        lastToastRef.current = line;
-        setToast(line);
-        setCardOpen(false);
-        dismissToastRef.current = window.setTimeout(() => {
-          setToast(null);
-          schedule();
-        }, 6000);
-      }, randomToastDelayMs());
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') schedule();
-      else {
-        clearTimers();
-        setToast(null);
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev;
+      if (next && collapseRef.current != null) {
+        window.clearTimeout(collapseRef.current);
+        collapseRef.current = null;
       }
-    };
-
-    schedule();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      clearTimers();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [phase, collapsed]);
+      return next;
+    });
+  }, []);
 
   if (phase === 'boot') return null;
 
-  const mailtoDev = `mailto:${EMAIL}?subject=${encodeURIComponent('Demo store inquiry')}`;
-  const mailtoBuild = `mailto:${EMAIL}?subject=${encodeURIComponent('What can I build for you?')}`;
+  const showDock = phase === 'morph' || phase === 'docked';
+  const showReveal = phase === 'reveal' || phase === 'morph';
 
   return (
     <div
       className={[
-        'demo-mascot',
-        `demo-mascot--${phase}`,
-        collapsed ? 'demo-mascot--collapsed' : '',
-        reduceMotion ? 'demo-mascot--reduce' : '',
-        hovered ? 'demo-mascot--hover' : '',
-        cardOpen ? 'demo-mascot--card-open' : '',
-        toast ? 'demo-mascot--toast' : '',
+        'demo-contact',
+        `demo-contact--${phase}`,
+        expanded ? 'demo-contact--expanded' : '',
+        reduceMotion ? 'demo-contact--reduce' : '',
       ]
         .filter(Boolean)
         .join(' ')}
       data-testid="demo-mascot"
     >
-      {phase === 'welcome' ? (
-        <div className="demo-mascot__welcome" role="dialog" aria-modal="true" aria-labelledby="demo-welcome-title">
-          <div className="demo-mascot__welcome-scrim" aria-hidden="true" />
-          <div className="demo-mascot__welcome-card">
-            <div className="demo-mascot__welcome-mark" aria-hidden="true">
-              <MascotFace />
+      {showReveal ? (
+        <div
+          className="demo-contact__reveal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="demo-contact-title"
+          data-testid="demo-contact-reveal"
+        >
+          <div className="demo-contact__reveal-card">
+            <div className="demo-contact__reveal-icon" aria-hidden="true">
+              <ContactIcon />
             </div>
-            <p className="ds-label demo-mascot__eyebrow">Studio demo</p>
-            <h2 id="demo-welcome-title" className="ds-display ds-display--sm demo-mascot__title">
-              This is a demo store
+            <h2 id="demo-contact-title" className="ds-display ds-display--sm demo-contact__title">
+              Built by Digital Wilderness
             </h2>
-            <p className="demo-mascot__lead">
-              A demonstration build to show how a polished storefront can look and feel. Explore freely —
-              when you are ready, reach out.
-            </p>
-            <div className="demo-mascot__welcome-actions">
-              <a className="demo-mascot__btn demo-mascot__btn--primary" href={mailtoDev}>
-                Email the developer
-              </a>
-              <button
-                type="button"
-                className="demo-mascot__btn demo-mascot__btn--ghost"
-                onClick={onPhoneAction}
-              >
-                {phoneCopied && !coarsePointer ? 'Phone copied' : `Call ${PHONE}`}
-              </button>
-            </div>
-            <button type="button" className="demo-mascot__dismiss" onClick={dismissWelcome}>
-              Continue browsing
+            <p className="demo-contact__lead">Questions about this demo? Reach out directly.</p>
+            <ContactDetails
+              onPhoneAction={onPhoneAction}
+              phoneCopied={phoneCopied}
+              coarsePointer={coarsePointer}
+            />
+            <button
+              type="button"
+              className="demo-contact__dismiss"
+              data-testid="demo-contact-dismiss"
+              onClick={dock}
+            >
+              Got it
             </button>
           </div>
         </div>
       ) : null}
 
-      {phase === 'morph' || phase === 'docked' ? (
-        <div className="demo-mascot__dock">
-          {collapsed ? (
-            <button
-              type="button"
-              className="demo-mascot__tab"
-              aria-label="Expand demo mascot"
-              data-testid="demo-mascot-tab"
-              onClick={toggleCollapsed}
-            >
-              Demo
-            </button>
-          ) : (
-            <>
-              {toast ? (
-                <button
-                  type="button"
-                  className="demo-mascot__bubble"
-                  data-testid="demo-mascot-toast"
-                  onClick={openCard}
-                >
-                  {toast}
-                </button>
-              ) : null}
+      {showDock ? (
+        <div className="demo-contact__dock" data-testid="demo-contact-dock">
+          {expanded ? (
+            <div className="demo-contact__card" data-testid="demo-mascot-card" role="dialog" aria-label="Contact">
+              <button
+                type="button"
+                className="demo-contact__card-close"
+                aria-label="Close contact card"
+                onClick={() => setExpanded(false)}
+              >
+                ×
+              </button>
+              <ContactDetails
+                onPhoneAction={onPhoneAction}
+                phoneCopied={phoneCopied}
+                coarsePointer={coarsePointer}
+              />
+            </div>
+          ) : null}
 
-              {cardOpen ? (
-                <div className="demo-mascot__card" data-testid="demo-mascot-card" role="dialog" aria-label="Contact">
-                  <button
-                    type="button"
-                    className="demo-mascot__card-close"
-                    aria-label="Close contact card"
-                    onClick={() => setCardOpen(false)}
-                  >
-                    ×
-                  </button>
-                  <p className="ds-label demo-mascot__card-eyebrow">Digital Wilderness</p>
-                  <a className="demo-mascot__card-link" href={mailtoDev}>
-                    {EMAIL}
-                  </a>
-                  <button type="button" className="demo-mascot__card-link demo-mascot__card-link--btn" onClick={onPhoneAction}>
-                    {phoneCopied ? 'Copied' : PHONE}
-                  </button>
-                  <a className="demo-mascot__card-cta" href={mailtoBuild}>
-                    What can I build for you?
-                  </a>
-                </div>
-              ) : null}
-
-              <div className="demo-mascot__launcher">
-                <button
-                  type="button"
-                  className="demo-mascot__fab"
-                  data-testid="demo-mascot-fab"
-                  aria-label="Demo contact"
-                  aria-expanded={cardOpen}
-                  onClick={openCard}
-                  onMouseEnter={() => setHovered(true)}
-                  onMouseLeave={() => setHovered(false)}
-                  onFocus={() => setHovered(true)}
-                  onBlur={() => setHovered(false)}
-                >
-                  <MascotFace amused={hovered} />
-                </button>
-                <button
-                  type="button"
-                  className="demo-mascot__collapse"
-                  aria-label="Collapse demo mascot"
-                  data-testid="demo-mascot-collapse"
-                  onClick={toggleCollapsed}
-                >
-                  ›
-                </button>
-              </div>
-            </>
-          )}
+          <button
+            type="button"
+            className="demo-contact__icon"
+            data-testid="demo-mascot-fab"
+            aria-label="Contact developer"
+            aria-expanded={expanded}
+            onClick={toggleExpanded}
+          >
+            <ContactIcon />
+          </button>
         </div>
       ) : null}
     </div>

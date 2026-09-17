@@ -357,6 +357,75 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
     }
   }
 
+  async function reorderImage(imageId: string, delta: number) {
+    if (!productId) return;
+    const sorted = [...images].sort((a, b) => a.position - b.position);
+    const idx = sorted.findIndex((img) => img.id === imageId);
+    const next = idx + delta;
+    if (idx < 0 || next < 0 || next >= sorted.length) return;
+    const reordered = [...sorted];
+    const [item] = reordered.splice(idx, 1);
+    reordered.splice(next, 0, item);
+    setBusy(true);
+    try {
+      const updated = await adminSend<Product>(
+        `/products/${productId}/images/reorder`,
+        'PUT',
+        { image_ids: reordered.map((img) => img.id) },
+      );
+      setImages(updated.images || []);
+      toast('Image order updated');
+    } catch {
+      toast('Could not reorder images');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function assignImageVariant(imageId: string, variantId: string) {
+    if (!productId) return;
+    setBusy(true);
+    try {
+      const img = await adminSend<ProductImage>(
+        `/products/${productId}/images/${imageId}`,
+        'PATCH',
+        { variant_id: variantId || null },
+      );
+      setImages((prev) => prev.map((i) => (i.id === imageId ? img : i)));
+      toast('Image variant updated');
+    } catch {
+      toast('Could not update image variant');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteProduct() {
+    if (!productId) return;
+    const ok = window.confirm(
+      'Delete this product? If it has order history it will be archived instead.',
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await adminSend<{ archived?: boolean; message?: string }>(
+        `/products/${productId}`,
+        'DELETE',
+      );
+      if (res?.archived) {
+        toast(res.message || 'Product archived (has orders)');
+        router.push('/admin/products');
+      } else {
+        toast('Product deleted');
+        router.push('/admin/products');
+      }
+    } catch {
+      toast('Could not delete product');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function updateVariantField(
     id: string,
     field: keyof ProductVariant,
@@ -500,7 +569,8 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
               <h2>Images</h2>
             </div>
             <p className="ds-caption">
-              Upload product photos. The first image is used in listings.
+              Upload product photos. The first default (non-variant) image is used in listings.
+              Assign variant-specific photos so the storefront swaps the main image on selection.
             </p>
             <input
               type="file"
@@ -517,11 +587,49 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
               <p className="ds-caption">No images yet.</p>
             ) : (
               <ul className="admin-hero-slides">
-                {images.map((img) => (
+                {[...images]
+                  .sort((a, b) => a.position - b.position)
+                  .map((img, idx, sorted) => (
                   <li key={img.id} className="admin-hero-slide">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={img.url} alt="" className="admin-hero-slide__img" />
+                    <label className="admin-field" style={{ marginTop: 8 }}>
+                      <span className="ds-label">Variant (optional)</span>
+                      <select
+                        className="admin-input"
+                        value={img.variant_id || ''}
+                        disabled={busy}
+                        onChange={(e) => void assignImageVariant(img.id, e.target.value)}
+                      >
+                        <option value="">Default (all variants)</option>
+                        {variants.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {[v.color, v.size, v.sku].filter(Boolean).join(' · ')}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <div className="admin-hero-slide__actions">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy || idx === 0}
+                        aria-label="Move up"
+                        onClick={() => void reorderImage(img.id, -1)}
+                      >
+                        Up
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy || idx === sorted.length - 1}
+                        aria-label="Move down"
+                        onClick={() => void reorderImage(img.id, 1)}
+                      >
+                        Down
+                      </Button>
                       <Button
                         type="button"
                         variant="danger"
@@ -667,6 +775,25 @@ export function AdminProductFormClient({ productId }: { productId?: string }) {
                 Add variant
               </Button>
             </form>
+          </section>
+
+          <section className="admin-panel admin-panel--danger">
+            <div className="admin-panel__head">
+              <h2>Danger zone</h2>
+            </div>
+            <p className="ds-caption">
+              Products with order history are archived instead of permanently deleted.
+            </p>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              disabled={busy}
+              data-testid="delete-product"
+              onClick={() => void deleteProduct()}
+            >
+              Delete product
+            </Button>
           </section>
         </>
       ) : (
